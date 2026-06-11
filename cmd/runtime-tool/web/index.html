@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DaSiWa TrainFlow Runtime Tool</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <h1>DaSiWa TrainFlow Runtime Tool</h1>
+        <p id="statusText">Ready</p>
+      </div>
+      <strong id="osBadge"></strong>
+    </header>
+    <section class="actions">
+      <button id="installButton">Install Requirements</button>
+      <button id="updateButton">Update Runtime</button>
+      <button id="verifyButton">Verify Runtime</button>
+    </section>
+    <label class="check-row">
+      <input id="keepBackup" type="checkbox">
+      <span>Keep backup before update</span>
+    </label>
+    <section class="note">
+      <p>Windows updates `python_embeded/windows` with the official Python 3.12 embeddable package. Linux creates `python_embeded/linux` as a local venv using `python3.12` or `python3` from PATH. Dependencies install with uv first and fall back to pip if needed. Backups are deleted after a successful update unless the checkbox is enabled.</p>
+    </section>
+    <pre id="logs"></pre>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

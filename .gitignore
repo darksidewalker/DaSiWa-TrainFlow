@@ -1,0 +1,40 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+.venv/
+venv/
+env/
+bin/
+lib/
+python_embeded/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Unit test / coverage reports
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Local environment files (secrets)
+.env
+
+# Hugging Face and other caches
+# Note: huggingface_hub often uses .cache/huggingface for local metadata
+.cache/
+
+# Frontend (useful if you are developing custom Gradio components)
+node_modules/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+*.swp

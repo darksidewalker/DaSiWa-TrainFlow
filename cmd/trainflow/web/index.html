@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DaSiWa TrainFlow</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <h1>DaSiWa TrainFlow</h1>
+        <p id="statusText">Idle</p>
+      </div>
+      <div class="actions">
+        <button id="monitorToggle" class="icon-button" title="Toggle hardware overlay">HW</button>
+        <button id="saveButton" class="secondary">Save</button>
+        <button id="startButton" class="primary">Start</button>
+        <button id="stopButton" class="danger">Stop</button>
+        <button id="quitButton" class="danger">Quit</button>
+      </div>
+    </header>
+
+    <section class="workspace">
+      <aside class="left-rail">
+        <section class="panel identity">
+          <label>
+            <span>Trigger / Project</span>
+            <input id="trigger_word" autocomplete="off" placeholder="unique_style">
+          </label>
+          <label>
+            <span>Dataset Path</span>
+            <div class="path-row">
+              <input id="dataset_path" autocomplete="off" placeholder="/path/to/images">
+              <button class="browse-button" data-target="dataset_path" data-mode="directory" title="Choose dataset folder">...</button>
+            </div>
+          </label>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">Model Paths</div>
+          <label>
+            <span>DiT</span>
+            <div class="path-row">
+              <input id="dit_path" autocomplete="off">
+              <button class="browse-button" data-target="dit_path" data-mode="model" title="Choose DiT model">...</button>
+            </div>
+          </label>
+          <label>
+            <span>Qwen3</span>
+            <div class="path-row">
+              <input id="qwen_path" autocomplete="off">
+              <button class="browse-button" data-target="qwen_path" data-mode="model" title="Choose Qwen3 model">...</button>
+            </div>
+          </label>
+          <label>
+            <span>VAE</span>
+            <div class="path-row">
+              <input id="vae_path" autocomplete="off">
+              <button class="browse-button" data-target="vae_path" data-mode="model" title="Choose VAE model">...</button>
+            </div>
+          </label>
+        </section>
+
+        <section class="panel two-col">
+          <label>
+            <span>Rank</span>
+            <input id="network_rank" type="number" min="1" step="1">
+          </label>
+          <label>
+            <span>Optimizer</span>
+            <select id="optimizer">
+              <option>Prodigy</option>
+              <option>AdamW8bit</option>
+              <option>AdamW</option>
+            </select>
+          </label>
+          <label>
+            <span>Learning Rate</span>
+            <input id="learning_rate" autocomplete="off">
+          </label>
+          <label>
+            <span>Batch</span>
+            <input id="train_batch_size" type="number" min="1" step="1">
+          </label>
+          <label>
+            <span>Steps</span>
+            <input id="training_steps" type="number" min="1" step="1">
+          </label>
+          <label>
+            <span>Grad Accum</span>
+            <input id="gradient_accumulation_steps" type="number" min="1" step="1">
+          </label>
+          <label>
+            <span>Save Every</span>
+            <input id="save_steps" type="number" min="1" step="1">
+          </label>
+          <label>
+            <span>Preview Every</span>
+            <input id="sample_steps" type="number" min="1" step="1">
+          </label>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">Training Scope</div>
+          <label class="check-row">
+            <input id="train_unet_only" type="checkbox">
+            <span>Train UNet Only</span>
+          </label>
+          <div class="muted-line">Freeze text encoder. Recommended for most LoRA training.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">Resume</div>
+          <label class="check-row">
+            <input id="resume_enabled" type="checkbox">
+            <span>Resume training</span>
+          </label>
+          <label class="check-row">
+            <input id="auto_resume" type="checkbox">
+            <span>Use latest saved state</span>
+          </label>
+          <label>
+            <span>Resume State Path</span>
+            <div class="path-row">
+              <input id="resume_path" autocomplete="off" placeholder="output/project/*-state">
+              <button class="browse-button" data-target="resume_path" data-mode="directory" title="Choose saved state folder">...</button>
+            </div>
+          </label>
+        </section>
+      </aside>
+
+      <section class="center-stage">
+        <section class="log-panel">
+          <div class="panel-title">Training Log</div>
+          <pre id="logs"></pre>
+        </section>
+        <section class="tools-row">
+          <div class="panel tool-panel">
+            <div class="panel-title">Sample Prompt</div>
+            <textarea id="pos_prompt" rows="4" placeholder="positive prompt"></textarea>
+            <textarea id="neg_prompt" rows="3" placeholder="negative prompt"></textarea>
+            <div class="four-col">
+              <label>
+                <span>Width</span>
+                <input id="width" type="number" min="64" step="64">
+              </label>
+              <label>
+                <span>Height</span>
+                <input id="height" type="number" min="64" step="64">
+              </label>
+              <label>
+                <span>CFG</span>
+                <input id="sample_cfg" type="number" min="0" step="0.1">
+              </label>
+              <label>
+                <span>Seed</span>
+                <input id="sample_seed" type="number" step="1">
+              </label>
+            </div>
+            <section id="hardwareOverlay" class="hardware-overlay">
+              <div class="overlay-head">
+                <strong>Hardware</strong>
+                <span id="socketState">offline</span>
+              </div>
+              <div class="metric">
+                <span>CPU</span>
+                <strong id="cpuValue">0%</strong>
+                <div class="bar"><i id="cpuBar"></i></div>
+              </div>
+              <div class="metric">
+                <span>RAM</span>
+                <strong id="ramValue">0 / 0</strong>
+                <div class="bar"><i id="ramBar"></i></div>
+              </div>
+              <div id="gpuList" class="gpu-list"></div>
+            </section>
+          </div>
+          <div class="panel tool-panel">
+            <div class="panel-title">Dataset Prep</div>
+            <div class="four-col">
+              <label>
+                <span>Min Side</span>
+                <input id="side_min" type="number" min="64" step="64">
+              </label>
+              <label>
+                <span>Max Side</span>
+                <input id="side_max" type="number" min="64" step="64">
+              </label>
+              <label>
+                <span>General</span>
+                <input id="tagger_gen_thresh" type="number" min="0" max="1" step="0.01">
+              </label>
+              <label>
+                <span>Character</span>
+                <input id="tagger_char_thresh" type="number" min="0" max="1" step="0.01">
+              </label>
+            </div>
+            <label class="check-row">
+              <input id="tagger_overwrite" type="checkbox">
+              <span>Overwrite captions</span>
+            </label>
+            <div class="muted-line">Smart bucketing and WD tagging stay available in the classic Python app while the Go shell handles training and monitoring.</div>
+          </div>
+        </section>
+      </section>
+
+      <aside class="right-rail">
+        <section class="preview-strip">
+          <div class="panel-title">Previews</div>
+          <div id="gallery" class="gallery"></div>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <div id="imageOverlay" class="dialog-backdrop hidden">
+    <section class="image-overlay">
+      <button id="overlayClose" class="icon-button overlay-close" title="Close preview">×</button>
+      <button id="overlayPrev" class="overlay-arrow prev" title="Previous image">‹</button>
+      <img id="overlayImage" src="" alt="Preview image">
+      <button id="overlayNext" class="overlay-arrow next" title="Next image">›</button>
+      <div id="overlayCaption" class="overlay-caption"></div>
+    </section>
+  </div>
+
+  <div id="pathDialog" class="dialog-backdrop hidden">
+    <section class="path-dialog">
+      <header>
+        <strong id="pathDialogTitle">Choose Path</strong>
+        <button id="pathClose" class="icon-button" title="Close selector">x</button>
+      </header>
+      <div class="path-address">
+        <button id="pathUp" class="secondary">Up</button>
+        <input id="pathCurrent" autocomplete="off">
+        <button id="pathGo" class="secondary">Go</button>
+      </div>
+      <div id="pathRoots" class="path-roots"></div>
+      <div id="pathEntries" class="path-entries"></div>
+      <footer>
+        <button id="pathCancel" class="secondary">Cancel</button>
+        <button id="pathChoose" class="primary">Choose</button>
+      </footer>
+    </section>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
