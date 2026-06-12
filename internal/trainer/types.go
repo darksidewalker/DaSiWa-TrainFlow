@@ -1,5 +1,10 @@
 package trainer
 
+import (
+	"os"
+	"path/filepath"
+)
+
 type Settings struct {
 	TriggerWord               string  `json:"trigger_word"`
 	DatasetPath               string  `json:"dataset_path"`
@@ -34,12 +39,13 @@ type Settings struct {
 }
 
 func DefaultSettings(root string) Settings {
+	home := defaultSettingsPath(root)
 	return Settings{
 		TriggerWord:               "",
-		DatasetPath:               "",
-		DiTPath:                   joinSlash(root, "models", "anima", "dit", "anima-preview.safetensors"),
-		QwenPath:                  joinSlash(root, "models", "anima", "text_encoder", "qwen_3_06b_base.safetensors"),
-		VAEPath:                   joinSlash(root, "models", "anima", "vae", "qwen_image_vae.safetensors"),
+		DatasetPath:               home,
+		DiTPath:                   home,
+		QwenPath:                  home,
+		VAEPath:                   home,
 		NetworkRank:               32,
 		LearningRate:              "1.0",
 		Optimizer:                 "Prodigy",
@@ -59,13 +65,20 @@ func DefaultSettings(root string) Settings {
 		TrainUNetOnly:             true,
 		ResumeEnabled:             false,
 		AutoResume:                true,
-		ResumePath:                "",
+		ResumePath:                home,
 		SideMin:                   512,
 		SideMax:                   768,
 		TaggerGenThreshold:        0.35,
 		TaggerCharThreshold:       0.85,
 		TaggerOverwrite:           false,
 	}
+}
+
+func defaultSettingsPath(root string) string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.ToSlash(home)
+	}
+	return filepath.ToSlash(root)
 }
 
 type ImageItem struct {
