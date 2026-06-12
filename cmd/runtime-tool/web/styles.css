@@ -6,6 +6,7 @@
   --text: #f0f3f7;
   --muted: #9aa4b2;
   --teal: #2dd4bf;
+  --amber: #f5b84b;
   --rose: #fb7185;
 }
 
@@ -46,13 +47,42 @@ p {
   color: var(--muted);
 }
 
+.top-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(37, 43, 51, 0.8);
+  font-size: 12px;
+}
+
+.status-pill.ready {
+  border-color: rgba(45, 212, 191, 0.45);
+  color: var(--teal);
+}
+
+.status-pill.missing {
+  border-color: rgba(245, 184, 75, 0.55);
+  color: var(--amber);
+}
+
 #osBadge {
   color: var(--teal);
 }
 
 .actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
   margin: 18px 0;
 }
@@ -85,6 +115,11 @@ button {
 button:first-child {
   background: var(--teal);
   color: #061313;
+}
+
+.danger {
+  background: rgba(251, 113, 133, 0.18);
+  border-color: rgba(251, 113, 133, 0.55);
 }
 
 button:disabled {

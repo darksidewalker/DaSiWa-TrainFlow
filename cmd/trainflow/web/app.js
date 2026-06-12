@@ -51,6 +51,8 @@ const logs = document.getElementById("logs");
 const statusText = document.getElementById("statusText");
 const runtimeStatus = document.getElementById("runtimeStatus");
 const runtimeLaunch = document.getElementById("runtimeLaunch");
+const modelStatus = document.getElementById("modelStatus");
+const modelLaunch = document.getElementById("modelLaunch");
 const socketState = document.getElementById("socketState");
 const startButton = document.getElementById("startButton");
 const stopButton = document.getElementById("stopButton");
@@ -81,6 +83,7 @@ let overlayIndex = 0;
 
 let saveTimer = 0;
 let runtimePollTimer = 0;
+let modelPollTimer = 0;
 let running = false;
 let picker = {
   target: "",
@@ -202,6 +205,25 @@ async function refreshRuntimeStatus() {
   }
 }
 
+async function refreshModelStatus() {
+  try {
+    const status = await api("/api/models");
+    renderModelStatus(status);
+    if (!status.ready && modelPollTimer === 0) {
+      modelPollTimer = window.setInterval(refreshModelStatus, 5000);
+    }
+    if (status.ready && modelPollTimer !== 0) {
+      window.clearInterval(modelPollTimer);
+      modelPollTimer = 0;
+    }
+  } catch (err) {
+    modelStatus.textContent = "Models check failed";
+    modelStatus.title = err.message;
+    modelStatus.className = "runtime-pill error";
+    modelLaunch.classList.remove("hidden");
+  }
+}
+
 function renderRuntimeStatus(status) {
   runtimeStatus.textContent = status.ready ? "Runtime ready" : "Runtime missing";
   runtimeStatus.title = status.ready ? status.path : `Expected at ${status.expected}`;
@@ -210,19 +232,39 @@ function renderRuntimeStatus(status) {
   runtimeLaunch.disabled = false;
 }
 
+function renderModelStatus(status) {
+  if (status.ready && status.optional_ready) {
+    modelStatus.textContent = "Models ready";
+  } else if (status.ready) {
+    modelStatus.textContent = `Prep missing ${status.optional_missing}`;
+  } else {
+    modelStatus.textContent = `Models missing ${status.missing}`;
+  }
+  modelStatus.title = (status.files || [])
+    .map((file) => `${file.ok ? "OK" : "Missing"}: ${file.path}`)
+    .join("\n");
+  modelStatus.className = `runtime-pill ${status.ready && status.optional_ready ? "ready" : "missing"}`;
+  modelLaunch.classList.toggle("hidden", Boolean(status.ready && status.optional_ready));
+  modelLaunch.disabled = false;
+}
+
 async function launchRuntimeTool() {
   runtimeLaunch.disabled = true;
+  modelLaunch.disabled = true;
   try {
     const resp = await api("/api/runtime/launch", { method: "POST" });
     setStatus(resp.message, resp.ok);
     if (!resp.ok) {
       runtimeLaunch.disabled = false;
+      modelLaunch.disabled = false;
       return;
     }
     await refreshRuntimeStatus();
+    await refreshModelStatus();
   } catch (err) {
     setStatus(err.message, false);
     runtimeLaunch.disabled = false;
+    modelLaunch.disabled = false;
   }
 }
 
@@ -431,6 +473,7 @@ async function boot() {
   setLogs(status.logs);
   renderGallery(status.images);
   await refreshRuntimeStatus();
+  await refreshModelStatus();
   connectWS();
 }
 
@@ -448,6 +491,7 @@ startButton.addEventListener("click", startTraining);
 stopButton.addEventListener("click", stopTraining);
 quitButton.addEventListener("click", quitApp);
 runtimeLaunch.addEventListener("click", launchRuntimeTool);
+modelLaunch.addEventListener("click", launchRuntimeTool);
 monitorToggle.addEventListener("click", () => hardwareOverlay.classList.toggle("hidden"));
 pathClose.addEventListener("click", closePathPicker);
 pathCancel.addEventListener("click", closePathPicker);
@@ -470,6 +514,7 @@ imageOverlay.addEventListener("click", (event) => {
   if (event.target === imageOverlay) closeImageOverlay();
 });
 window.addEventListener("focus", refreshRuntimeStatus);
+window.addEventListener("focus", refreshModelStatus);
 window.addEventListener("keydown", (event) => {
   if (!imageOverlay || imageOverlay.classList.contains("hidden")) return;
   if (event.key === "Escape") {

@@ -164,9 +164,23 @@ python training/sd-scripts/tools/anima_lora_metadata.py path/to/lora.safetensors
 
 ## Required Models
 
-Place model files under `models/` or select them from anywhere with the Browse buttons.
+Use **Download Models** in `TrainFlow_Runtime_Tool` to download the required Anima files into:
 
-Optional prep models:
+- `models/anima/dit/anima-base-v1.0.safetensors`
+- `models/anima/text_encoder/qwen_3_06b_base.safetensors`
+- `models/anima/vae/qwen_image_vae.safetensors`
+
+Use **Download Prep** for optional dataset-prep models:
+
+- `models/wd-eva02-large-tagger-v3/model.onnx`
+- `models/wd-eva02-large-tagger-v3/selected_tags.csv`
+- `models/wd-eva02-large-tagger-v3/config.json`
+- `models/wd-eva02-large-tagger-v3/sw_jax_cv_config.json`
+- `models/u2net/u2net.onnx`
+
+The main app shows a top-bar indicator for both required models and optional prep models. You can also select model files from anywhere with the Browse buttons.
+
+Manual optional prep model commands:
 
 ```bash
 git clone https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3 models/wd-eva02-large-tagger-v3

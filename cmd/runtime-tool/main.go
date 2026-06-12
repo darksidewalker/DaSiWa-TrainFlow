@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"trainflow/internal/modelops"
 	"trainflow/internal/runtimeops"
 	"trainflow/internal/trainer"
 )
@@ -38,9 +39,17 @@ func main() {
 	runState := &runner{root: root, hub: hub}
 
 	mux := http.NewServeMux()
+	var server *http.Server
 	mux.Handle("/ws", hub)
 	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, runState.status())
+	})
+	mux.HandleFunc("/api/models", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, modelops.Check(runState.root))
 	})
 	mux.HandleFunc("/api/run", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -59,9 +68,20 @@ func main() {
 		ok, msg := runState.start(body.Action, body.KeepBackup)
 		writeJSON(w, map[string]any{"ok": ok, "message": msg})
 	})
+	mux.HandleFunc("/api/app/quit", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true, "message": "Shutting down runtime tool."})
+		go func() {
+			time.Sleep(150 * time.Millisecond)
+			_ = server.Close()
+		}()
+	})
 	mux.Handle("/", http.FileServer(mustSub(webFS)))
 
-	server := &http.Server{
+	server = &http.Server{
 		Addr:              ":7870",
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
@@ -99,6 +119,10 @@ func (r *runner) start(action string, keepBackup bool) (bool, string) {
 			err = runtimeops.UpdateRuntime(r.root, keepBackup, r.append)
 		case "verify":
 			err = runtimeops.Verify(r.root, r.append)
+		case "models":
+			err = modelops.DownloadRequired(r.root, r.append)
+		case "prep-models":
+			err = modelops.DownloadOptional(r.root, r.append)
 		default:
 			err = fmt.Errorf("unknown action: %s", action)
 		}
@@ -128,6 +152,7 @@ func (r *runner) status() map[string]any {
 		"running": r.running,
 		"logs":    r.logs,
 		"os":      runtime.GOOS,
+		"models":  modelops.Check(r.root),
 	}
 }
 

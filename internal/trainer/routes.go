@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"trainflow/internal/modelops"
 )
 
 func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *Hub, onQuit func()) {
@@ -48,6 +50,14 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 			return
 		}
 		writeJSON(w, runtimeStatus(manager.root))
+	})
+
+	mux.HandleFunc("/api/models", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, modelops.Check(manager.root))
 	})
 
 	mux.HandleFunc("/api/runtime/launch", func(w http.ResponseWriter, r *http.Request) {

@@ -11,14 +11,20 @@
     <header>
       <div>
         <h1>DaSiWa TrainFlow Runtime Tool</h1>
-        <p id="statusText">Ready</p>
+        <div class="top-status">
+          <p id="statusText">Ready</p>
+          <span id="modelStatus" class="status-pill checking">Models checking</span>
+        </div>
       </div>
       <strong id="osBadge"></strong>
     </header>
     <section class="actions">
       <button id="installButton">Install Requirements</button>
       <button id="updateButton">Update Runtime</button>
+      <button id="modelsButton">Download Models</button>
+      <button id="prepModelsButton">Download Prep</button>
       <button id="verifyButton">Verify Runtime</button>
+      <button id="quitButton" class="danger">Quit</button>
     </section>
     <label class="check-row">
       <input id="keepBackup" type="checkbox">
