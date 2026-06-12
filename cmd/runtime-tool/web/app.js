@@ -58,7 +58,7 @@ function renderModelStatus(status) {
   const optional = status.optional_ready ? "Prep ready" : `Prep missing ${status.optional_missing}`;
   modelStatus.textContent = `${required} / ${optional}`;
   modelStatus.title = (status.files || [])
-    .map((file) => `${file.ok ? "OK" : "Missing"}: ${file.path}`)
+    .map((file) => `${file.ok ? "OK" : "Missing"}: ${file.found || file.path}`)
     .join("\n");
   modelStatus.className = `status-pill ${status.ready && status.optional_ready ? "ready" : "missing"}`;
 }

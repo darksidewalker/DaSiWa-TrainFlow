@@ -57,7 +57,7 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		writeJSON(w, modelops.Check(manager.root))
+		writeJSON(w, modelops.CheckWithOverrides(manager.root, modelOverrides(manager.Settings())))
 	})
 
 	mux.HandleFunc("/api/runtime/launch", func(w http.ResponseWriter, r *http.Request) {
@@ -149,6 +149,14 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 
 	mux.Handle("/ws", hub)
 	mux.Handle("/", http.FileServer(http.FS(web)))
+}
+
+func modelOverrides(settings Settings) map[string]string {
+	return map[string]string{
+		"dit_path":  settings.DiTPath,
+		"qwen_path": settings.QwenPath,
+		"vae_path":  settings.VAEPath,
+	}
 }
 
 type RuntimeStatus struct {

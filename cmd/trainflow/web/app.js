@@ -241,7 +241,7 @@ function renderModelStatus(status) {
     modelStatus.textContent = `Models missing ${status.missing}`;
   }
   modelStatus.title = (status.files || [])
-    .map((file) => `${file.ok ? "OK" : "Missing"}: ${file.path}`)
+    .map((file) => `${file.ok ? "OK" : "Missing"}: ${file.found || file.path}`)
     .join("\n");
   modelStatus.className = `runtime-pill ${status.ready && status.optional_ready ? "ready" : "missing"}`;
   modelLaunch.classList.toggle("hidden", Boolean(status.ready && status.optional_ready));

@@ -49,7 +49,7 @@ func main() {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		writeJSON(w, modelops.Check(runState.root))
+		writeJSON(w, modelops.CheckWithOverrides(runState.root, modelOverrides(runState.root)))
 	})
 	mux.HandleFunc("/api/run", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -152,7 +152,27 @@ func (r *runner) status() map[string]any {
 		"running": r.running,
 		"logs":    r.logs,
 		"os":      runtime.GOOS,
-		"models":  modelops.Check(r.root),
+		"models":  modelops.CheckWithOverrides(r.root, modelOverrides(r.root)),
+	}
+}
+
+func modelOverrides(root string) map[string]string {
+	data, err := os.ReadFile(filepath.Join(root, "training", "settings.json"))
+	if err != nil {
+		return nil
+	}
+	var settings struct {
+		DiTPath  string `json:"dit_path"`
+		QwenPath string `json:"qwen_path"`
+		VAEPath  string `json:"vae_path"`
+	}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return nil
+	}
+	return map[string]string{
+		"dit_path":  settings.DiTPath,
+		"qwen_path": settings.QwenPath,
+		"vae_path":  settings.VAEPath,
 	}
 }
 

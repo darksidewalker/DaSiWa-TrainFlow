@@ -13,7 +13,9 @@ type Logger func(string)
 
 type ModelFile struct {
 	Name     string `json:"name"`
+	Key      string `json:"key"`
 	Path     string `json:"path"`
+	Found    string `json:"found"`
 	URL      string `json:"url"`
 	Size     string `json:"size"`
 	Optional bool   `json:"optional"`
@@ -33,17 +35,20 @@ func RequiredFiles(root string) []ModelFile {
 	return []ModelFile{
 		{
 			Name: "Anima Base v1.0 DiT",
+			Key:  "dit_path",
 			Path: filepath.Join(root, "models", "anima", "dit", "anima-base-v1.0.safetensors"),
 			URL:  "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/diffusion_models/anima-base-v1.0.safetensors",
 			Size: "18.2 GB",
 		},
 		{
 			Name: "Qwen3 text encoder",
+			Key:  "qwen_path",
 			Path: filepath.Join(root, "models", "anima", "text_encoder", "qwen_3_06b_base.safetensors"),
 			URL:  "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/text_encoders/qwen_3_06b_base.safetensors",
 		},
 		{
 			Name: "Qwen Image VAE",
+			Key:  "vae_path",
 			Path: filepath.Join(root, "models", "anima", "vae", "qwen_image_vae.safetensors"),
 			URL:  "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/vae/qwen_image_vae.safetensors",
 			Size: "254 MB",
@@ -96,11 +101,24 @@ func AllFiles(root string) []ModelFile {
 }
 
 func Check(root string) Status {
+	return CheckWithOverrides(root, nil)
+}
+
+func CheckWithOverrides(root string, overrides map[string]string) Status {
 	files := AllFiles(root)
 	missing := 0
 	optionalMissing := 0
 	for i := range files {
 		files[i].OK = fileExists(files[i].Path)
+		if files[i].OK {
+			files[i].Found = files[i].Path
+		}
+		if !files[i].Optional && files[i].Key != "" && overrides != nil {
+			if override := overrides[files[i].Key]; override != "" && fileExists(override) {
+				files[i].OK = true
+				files[i].Found = override
+			}
+		}
 		if files[i].OK {
 			continue
 		}
