@@ -76,14 +76,18 @@ The runtime tool:
 
 Windows uses the official Python 3.12.10 embeddable package. Linux creates a local `python_embeded/linux` venv using `python3.12` when available, otherwise `python3`. The app still supports the old flat `python_embeded` folder as a fallback, but platform-specific folders are the shipping layout.
 
-## Out Of The Box Shipping
+## Shipping Runtime Files
 
-For a clone/ZIP to run by double-clicking only, commit the root binaries and the matching runtime folder:
+Do not commit `python_embeded/` to Git. It is intentionally ignored because the local runtime can contain many thousands of files plus very large ML wheels, which quickly hits GitHub file and repository limits.
 
-- Windows: `TrainFlow.exe`, `TrainFlow_Runtime_Tool.exe`, and `python_embeded/windows`
-- Linux: `TrainFlow`, `TrainFlow_Runtime_Tool`, and `python_embeded/linux`
+For normal installs, ship the root binaries and let the runtime tool create the platform runtime on the user's machine:
 
-You can ship both runtime folders in the same repo. Each OS will pick its own folder automatically. If a platform runtime is missing, the user can open `TrainFlow_Runtime_Tool` and click **Update Runtime** once.
+- Windows: `TrainFlow.exe` and `TrainFlow_Runtime_Tool.exe`
+- Linux: `TrainFlow` and `TrainFlow_Runtime_Tool`
+
+If a platform runtime is missing, the user can open `TrainFlow_Runtime_Tool` and click **Update Runtime** once. That creates or updates `python_embeded/windows` on Windows and `python_embeded/linux` on Linux.
+
+If you need a fully offline/prebuilt package, create a release ZIP or 7z outside Git that contains the binaries plus the matching `python_embeded/<platform>` folder. Upload that archive as a GitHub Release asset or host it separately. Compressing the runtime into the Go executable is not recommended: the archive would still be huge, platform-specific, slow to build, and would need to be unpacked before Python and native wheels can run.
 
 ## Build From Source
 

@@ -1,5 +1,7 @@
 # Runtime Upgrade Notes
 
+`python_embeded/` is a generated local runtime. Keep it out of Git; the folder can contain very large dependency wheels and thousands of installed package files. Use `TrainFlow_Runtime_Tool` to recreate it, or distribute a compressed release archive outside the repository if you need an offline package.
+
 ## Python 3.12 + CUDA 13.0
 
 Run this on Windows from the project root:

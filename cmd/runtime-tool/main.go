@@ -147,12 +147,23 @@ func detectRoot() (string, error) {
 			return dir, nil
 		}
 	}
-	return "", fmt.Errorf("run from the TrainFlow folder or place the binary beside training/sd-scripts")
+	return "", fmt.Errorf("run from the TrainFlow folder or place the binary beside TrainFlow or training/sd-scripts")
 }
 
 func looksLikeRoot(dir string) bool {
-	_, err := os.Stat(filepath.Join(dir, "training", "sd-scripts"))
-	return err == nil
+	if dir == "" {
+		return false
+	}
+	for _, marker := range []string{
+		filepath.Join(dir, "training", "sd-scripts"),
+		filepath.Join(dir, "TrainFlow"),
+		filepath.Join(dir, "TrainFlow.exe"),
+	} {
+		if _, err := os.Stat(marker); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func openBrowser(url string) {

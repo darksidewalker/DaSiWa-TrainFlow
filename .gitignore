@@ -11,6 +11,10 @@ bin/
 lib/
 python_embeded/
 
+# TrainFlow generated files
+training/output/
+training/settings.json
+
 # Distribution / packaging
 dist/
 build/

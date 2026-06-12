@@ -11,7 +11,11 @@
     <header class="topbar">
       <div>
         <h1>DaSiWa TrainFlow</h1>
-        <p id="statusText">Idle</p>
+        <div class="top-status">
+          <p id="statusText">Idle</p>
+          <span id="runtimeStatus" class="runtime-pill checking">Runtime checking</span>
+          <button id="runtimeLaunch" class="runtime-action hidden" title="Open the runtime installer">Runtime Tool</button>
+        </div>
       </div>
       <div class="actions">
         <button id="monitorToggle" class="icon-button" title="Toggle hardware overlay">HW</button>

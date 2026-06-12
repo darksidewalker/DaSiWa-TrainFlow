@@ -2,10 +2,13 @@ package trainer
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -37,6 +40,31 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 
 	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, manager.Status())
+	})
+
+	mux.HandleFunc("/api/runtime", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, runtimeStatus(manager.root))
+	})
+
+	mux.HandleFunc("/api/runtime/launch", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		status := runtimeStatus(manager.root)
+		if status.Ready {
+			writeJSON(w, StartResponse{OK: true, Message: "Runtime is already ready."})
+			return
+		}
+		if err := launchRuntimeTool(manager.root); err != nil {
+			writeJSON(w, StartResponse{OK: false, Message: err.Error()})
+			return
+		}
+		writeJSON(w, StartResponse{OK: true, Message: "Runtime tool launched."})
 	})
 
 	mux.HandleFunc("/api/app/quit", func(w http.ResponseWriter, r *http.Request) {
@@ -111,6 +139,57 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 
 	mux.Handle("/ws", hub)
 	mux.Handle("/", http.FileServer(http.FS(web)))
+}
+
+type RuntimeStatus struct {
+	Ready    bool   `json:"ready"`
+	OS       string `json:"os"`
+	Path     string `json:"path"`
+	Expected string `json:"expected"`
+	Message  string `json:"message"`
+}
+
+func runtimeStatus(root string) RuntimeStatus {
+	expected := filepath.Join(root, "python_embeded", "linux")
+	candidates := []string{
+		filepath.Join(expected, "bin", "python3"),
+		filepath.Join(expected, "bin", "python"),
+	}
+	if runtime.GOOS == "windows" {
+		expected = filepath.Join(root, "python_embeded", "windows")
+		candidates = []string{filepath.Join(expected, "python.exe")}
+	}
+	for _, candidate := range candidates {
+		if fileExists(candidate) {
+			return RuntimeStatus{
+				Ready:    true,
+				OS:       runtime.GOOS,
+				Path:     candidate,
+				Expected: expected,
+				Message:  "Runtime ready",
+			}
+		}
+	}
+	return RuntimeStatus{
+		Ready:    false,
+		OS:       runtime.GOOS,
+		Expected: expected,
+		Message:  "Runtime missing",
+	}
+}
+
+func launchRuntimeTool(root string) error {
+	name := "TrainFlow_Runtime_Tool"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	path := filepath.Join(root, name)
+	if !fileExists(path) {
+		return fmt.Errorf("%s was not found beside TrainFlow", name)
+	}
+	cmd := exec.Command(path)
+	cmd.Dir = root
+	return cmd.Start()
 }
 
 func writeJSON(w http.ResponseWriter, value any) {

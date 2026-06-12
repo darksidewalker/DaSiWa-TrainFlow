@@ -49,6 +49,8 @@ const numericFields = new Set([
 const els = Object.fromEntries(fields.map((id) => [id, document.getElementById(id)]));
 const logs = document.getElementById("logs");
 const statusText = document.getElementById("statusText");
+const runtimeStatus = document.getElementById("runtimeStatus");
+const runtimeLaunch = document.getElementById("runtimeLaunch");
 const socketState = document.getElementById("socketState");
 const startButton = document.getElementById("startButton");
 const stopButton = document.getElementById("stopButton");
@@ -78,6 +80,7 @@ let galleryImages = [];
 let overlayIndex = 0;
 
 let saveTimer = 0;
+let runtimePollTimer = 0;
 let running = false;
 let picker = {
   target: "",
@@ -177,6 +180,49 @@ async function quitApp() {
     quitButton.disabled = true;
   } catch (err) {
     setStatus(err.message, false);
+  }
+}
+
+async function refreshRuntimeStatus() {
+  try {
+    const status = await api("/api/runtime");
+    renderRuntimeStatus(status);
+    if (!status.ready && runtimePollTimer === 0) {
+      runtimePollTimer = window.setInterval(refreshRuntimeStatus, 5000);
+    }
+    if (status.ready && runtimePollTimer !== 0) {
+      window.clearInterval(runtimePollTimer);
+      runtimePollTimer = 0;
+    }
+  } catch (err) {
+    runtimeStatus.textContent = "Runtime check failed";
+    runtimeStatus.title = err.message;
+    runtimeStatus.className = "runtime-pill error";
+    runtimeLaunch.classList.remove("hidden");
+  }
+}
+
+function renderRuntimeStatus(status) {
+  runtimeStatus.textContent = status.ready ? "Runtime ready" : "Runtime missing";
+  runtimeStatus.title = status.ready ? status.path : `Expected at ${status.expected}`;
+  runtimeStatus.className = `runtime-pill ${status.ready ? "ready" : "missing"}`;
+  runtimeLaunch.classList.toggle("hidden", Boolean(status.ready));
+  runtimeLaunch.disabled = false;
+}
+
+async function launchRuntimeTool() {
+  runtimeLaunch.disabled = true;
+  try {
+    const resp = await api("/api/runtime/launch", { method: "POST" });
+    setStatus(resp.message, resp.ok);
+    if (!resp.ok) {
+      runtimeLaunch.disabled = false;
+      return;
+    }
+    await refreshRuntimeStatus();
+  } catch (err) {
+    setStatus(err.message, false);
+    runtimeLaunch.disabled = false;
   }
 }
 
@@ -384,6 +430,7 @@ async function boot() {
   setRunning(Boolean(status.running));
   setLogs(status.logs);
   renderGallery(status.images);
+  await refreshRuntimeStatus();
   connectWS();
 }
 
@@ -400,6 +447,7 @@ saveButton.addEventListener("click", saveSettings);
 startButton.addEventListener("click", startTraining);
 stopButton.addEventListener("click", stopTraining);
 quitButton.addEventListener("click", quitApp);
+runtimeLaunch.addEventListener("click", launchRuntimeTool);
 monitorToggle.addEventListener("click", () => hardwareOverlay.classList.toggle("hidden"));
 pathClose.addEventListener("click", closePathPicker);
 pathCancel.addEventListener("click", closePathPicker);
@@ -421,6 +469,7 @@ overlayNext.addEventListener("click", (event) => {
 imageOverlay.addEventListener("click", (event) => {
   if (event.target === imageOverlay) closeImageOverlay();
 });
+window.addEventListener("focus", refreshRuntimeStatus);
 window.addEventListener("keydown", (event) => {
   if (!imageOverlay || imageOverlay.classList.contains("hidden")) return;
   if (event.key === "Escape") {

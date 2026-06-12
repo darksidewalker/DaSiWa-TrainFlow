@@ -106,6 +106,54 @@ h1 {
   color: var(--muted);
 }
 
+.top-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.runtime-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(37, 43, 51, 0.8);
+  font-size: 12px;
+}
+
+.runtime-pill.ready {
+  border-color: rgba(45, 212, 191, 0.45);
+  color: var(--teal);
+}
+
+.runtime-pill.missing {
+  border-color: rgba(245, 184, 75, 0.55);
+  color: var(--amber);
+}
+
+.runtime-pill.error {
+  border-color: rgba(251, 113, 133, 0.55);
+  color: var(--rose);
+}
+
+.runtime-action {
+  min-height: 26px;
+  padding: 0 10px;
+  border-color: rgba(245, 184, 75, 0.45);
+  background: rgba(245, 184, 75, 0.14);
+  color: var(--amber);
+  font-size: 12px;
+}
+
+.hidden {
+  display: none !important;
+}
+
 .actions {
   display: flex;
   gap: 8px;
