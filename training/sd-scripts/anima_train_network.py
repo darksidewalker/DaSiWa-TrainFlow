@@ -389,9 +389,13 @@ class AnimaNetworkTrainer(train_network.NetworkTrainer):
         return loss
 
     def get_sai_model_spec(self, args):
-        return train_util.get_sai_model_spec_dataclass(None, args, False, True, False, anima="preview").to_metadata_dict()
+        return train_util.get_sai_model_spec_dataclass(None, args, False, True, False, anima="base-v1.0").to_metadata_dict()
 
     def update_metadata(self, metadata, args):
+        metadata["ss_base_model_version"] = "anima-base-v1.0"
+        metadata["ss_model_family"] = "anima"
+        metadata["ss_model_name"] = "anima-base-v1.0"
+        metadata["ss_architecture"] = "anima-base-v1.0/lora"
         metadata["ss_weighting_scheme"] = args.weighting_scheme
         metadata["ss_logit_mean"] = args.logit_mean
         metadata["ss_logit_std"] = args.logit_std

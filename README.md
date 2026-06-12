@@ -138,6 +138,17 @@ The UI includes a **Resume** panel:
 
 Training configs write `save_state = true`, `save_last_n_steps_state = 1`, and `save_last_n_epochs_state = 1`, so new runs keep resumable state.
 
+## Anima LoRA Metadata
+
+New LoRA files are saved with Anima-specific safetensors metadata, including `ss_base_model_version = "anima-base-v1.0"` and `modelspec.architecture = "anima-base-v1.0/lora"`.
+
+Some tools still guess model family from tensor names and may show unknown Anima LoRAs as SDXL if they do not support Anima yet. To inspect or repair an existing LoRA without retraining:
+
+```bash
+python training/sd-scripts/tools/anima_lora_metadata.py path/to/lora.safetensors
+python training/sd-scripts/tools/anima_lora_metadata.py path/to/lora.safetensors --fix
+```
+
 ## Features
 
 - Go binary with embedded HTML/CSS/JS UI

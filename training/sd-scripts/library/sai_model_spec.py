@@ -81,6 +81,7 @@ ARCH_LUMINA_2 = "lumina-2"
 ARCH_LUMINA_UNKNOWN = "lumina"
 ARCH_HUNYUAN_IMAGE_2_1 = "hunyuan-image-2.1"
 ARCH_HUNYUAN_IMAGE_UNKNOWN = "hunyuan-image"
+ARCH_ANIMA_BASE_V1_0 = "anima-base-v1.0"
 ARCH_ANIMA_PREVIEW = "anima-preview"
 ARCH_ANIMA_UNKNOWN = "anima-unknown"
 
@@ -225,7 +226,9 @@ def determine_architecture(
             arch = ARCH_HUNYUAN_IMAGE_UNKNOWN
     elif "anima" in model_config:
         anima_type = model_config["anima"]
-        if anima_type == "preview":
+        if anima_type in ("base-v1.0", "base", "v1.0"):
+            arch = ARCH_ANIMA_BASE_V1_0
+        elif anima_type == "preview":
             arch = ARCH_ANIMA_PREVIEW
         else:
             arch = ARCH_ANIMA_UNKNOWN
