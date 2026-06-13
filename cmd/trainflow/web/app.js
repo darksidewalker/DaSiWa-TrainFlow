@@ -225,8 +225,8 @@ async function refreshModelStatus() {
 }
 
 function renderRuntimeStatus(status) {
-  runtimeStatus.textContent = status.ready ? "Runtime ready" : "Runtime missing";
-  runtimeStatus.title = status.ready ? status.path : `Expected at ${status.expected}`;
+  runtimeStatus.textContent = status.ready ? "Runtime ready" : status.message || "Runtime missing";
+  runtimeStatus.title = status.ready ? status.path : status.path || `Expected at ${status.expected}`;
   runtimeStatus.className = `runtime-pill ${status.ready ? "ready" : "missing"}`;
   runtimeLaunch.classList.toggle("hidden", Boolean(status.ready));
   runtimeLaunch.disabled = false;

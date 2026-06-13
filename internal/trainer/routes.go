@@ -179,6 +179,15 @@ func runtimeStatus(root string) RuntimeStatus {
 	}
 	for _, candidate := range candidates {
 		if fileExists(candidate) {
+			if err := validatePythonRuntime(candidate); err != nil {
+				return RuntimeStatus{
+					Ready:    false,
+					OS:       runtime.GOOS,
+					Path:     candidate,
+					Expected: expected,
+					Message:  err.Error(),
+				}
+			}
 			return RuntimeStatus{
 				Ready:    true,
 				OS:       runtime.GOOS,

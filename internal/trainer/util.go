@@ -8,6 +8,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -228,6 +229,19 @@ func pythonExecutable(root string) string {
 		return "python"
 	}
 	return "python3"
+}
+
+func validatePythonRuntime(python string) error {
+	cmd := exec.Command(python, "-c", "import accelerate.commands.launch")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg != "" {
+			return fmt.Errorf("runtime incomplete: %s", msg)
+		}
+		return fmt.Errorf("runtime incomplete: %w", err)
+	}
+	return nil
 }
 
 func findLastStateDir(outputDir string) string {
