@@ -67,10 +67,14 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 		}
 		status := runtimeStatus(manager.root)
 		if status.Ready {
-			writeJSON(w, StartResponse{OK: true, Message: "Runtime is already ready."})
+			if err := openRuntimeTool(manager.root); err != nil {
+				writeJSON(w, StartResponse{OK: false, Message: err.Error()})
+				return
+			}
+			writeJSON(w, StartResponse{OK: true, Message: "Runtime tool opened."})
 			return
 		}
-		if err := launchRuntimeTool(manager.root); err != nil {
+		if err := openRuntimeTool(manager.root); err != nil {
 			writeJSON(w, StartResponse{OK: false, Message: err.Error()})
 			return
 		}
@@ -99,6 +103,26 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 			return
 		}
 		resp, err := manager.Start(settings)
+		if err != nil && resp.Message == "" {
+			resp = StartResponse{OK: false, Message: err.Error()}
+		}
+		writeJSON(w, resp)
+	})
+
+	mux.HandleFunc("/api/dataset/prep", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var body struct {
+			Action   string   `json:"action"`
+			Settings Settings `json:"settings"`
+		}
+		if err := decodeJSON(r, &body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp, err := manager.StartDatasetPrep(body.Action, body.Settings)
 		if err != nil && resp.Message == "" {
 			resp = StartResponse{OK: false, Message: err.Error()}
 		}
@@ -235,7 +259,7 @@ func runtimeStatus(root string) RuntimeStatus {
 	}
 }
 
-func launchRuntimeTool(root string) error {
+func openRuntimeTool(root string) error {
 	name := "TrainFlow_Runtime_Tool"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
@@ -246,14 +270,25 @@ func launchRuntimeTool(root string) error {
 	}
 	cmd := exec.Command(path)
 	cmd.Dir = root
-	return cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return openURL("http://127.0.0.1:7870")
 }
 
 func openFolder(path string) error {
+	return openURL(path)
+}
+
+func openURL(path string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.Command("explorer", path)
+		if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+			cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", path)
+		} else {
+			cmd = exec.Command("explorer", path)
+		}
 	case "darwin":
 		cmd = exec.Command("open", path)
 	default:

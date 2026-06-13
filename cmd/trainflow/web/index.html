@@ -212,7 +212,12 @@
               <input id="tagger_overwrite" type="checkbox">
               <span>Overwrite captions</span>
             </label>
-            <div class="muted-line">Smart bucketing and WD tagging stay available in the classic Python app while the Go shell handles training and monitoring.</div>
+            <div class="prep-actions">
+              <button id="tagDatasetButton" class="secondary">Tag Captions</button>
+              <button id="resizeDatasetButton" class="secondary">Resize Copy</button>
+              <button id="prepDatasetButton" class="primary">Tag + Resize</button>
+            </div>
+            <div class="muted-line">Tagging writes .txt captions beside the source images. Resize Copy writes a prepared copy under training/prepared.</div>
           </div>
         </section>
       </section>

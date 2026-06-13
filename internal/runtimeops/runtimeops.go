@@ -99,7 +99,7 @@ func installTrainerDeps(root string, installer dependencyInstaller, installFlash
 		return err
 	}
 	log("Installing TrainFlow UI/prep dependencies...")
-	if err := installer.install("gradio", "psutil", "toml", "pillow", "onnxruntime-gpu", "pandas", "opencv-python"); err != nil {
+	if err := installer.install("gradio", "psutil", "toml", "pillow", "onnx", "onnxruntime-gpu", "pandas", "opencv-python"); err != nil {
 		return err
 	}
 	if !installFlashAttention {

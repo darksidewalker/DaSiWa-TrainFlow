@@ -298,6 +298,19 @@ textarea:focus {
   min-height: 18px;
 }
 
+.prep-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.prep-actions button {
+  min-height: 38px;
+  padding: 8px;
+  font-size: 12px;
+}
+
 .muted-line {
   margin-top: 12px;
   color: var(--muted);
@@ -711,6 +724,7 @@ textarea:focus {
 @media (max-width: 520px) {
   .four-col,
   .two-col,
+  .prep-actions,
   .gallery {
     grid-template-columns: 1fr;
   }

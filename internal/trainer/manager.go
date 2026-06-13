@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"trainflow/internal/modelops"
 	"trainflow/internal/process"
 )
 
@@ -191,6 +192,82 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 	return StartResponse{OK: true, Message: "Training started."}, nil
 }
 
+func (m *Manager) StartDatasetPrep(action string, s Settings) (StartResponse, error) {
+	if err := m.SaveSettings(s); err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	m.mu.Lock()
+	if m.running {
+		m.mu.Unlock()
+		return StartResponse{OK: false, Message: "Another process is already running."}, nil
+	}
+	m.mu.Unlock()
+
+	if strings.TrimSpace(s.DatasetPath) == "" || !dirExists(s.DatasetPath) {
+		return StartResponse{OK: false, Message: "Dataset path not found: " + s.DatasetPath}, nil
+	}
+	if action != "tag" && action != "resize" && action != "all" {
+		return StartResponse{OK: false, Message: "Unknown dataset prep action: " + action}, nil
+	}
+	if action == "tag" || action == "all" {
+		if err := validatePrepModels(m.root); err != nil {
+			return StartResponse{OK: false, Message: err.Error()}, err
+		}
+	}
+
+	python := pythonExecutable(m.root)
+	if err := validatePythonRuntime(python); err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	trainDir := filepath.Join(m.root, "training", "sd-scripts")
+	args := datasetPrepArgs(m.root, action, s)
+	cmd := exec.Command(python, args...)
+	cmd.Dir = trainDir
+	cmd.Env = trainingEnv(trainDir)
+	process.Prepare(cmd)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	m.mu.Lock()
+	m.trainingCmd = cmd
+	m.running = true
+	m.activeGPUs = map[string]string{"0": "dataset prep"}
+	m.logLines = nil
+	m.mu.Unlock()
+	m.appendLog("Preparing dataset: " + datasetPrepLabel(action))
+	if action == "resize" || action == "all" {
+		m.appendLog("Prepared images will be written to: " + preparedDatasetPath(m.root, s))
+	}
+
+	if err := cmd.Start(); err != nil {
+		m.mu.Lock()
+		m.running = false
+		m.trainingCmd = nil
+		m.activeGPUs = map[string]string{}
+		m.mu.Unlock()
+		m.appendLog("Launch failed: " + err.Error())
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	go m.pipeLogs(stdout, "")
+	go m.pipeLogs(stderr, "")
+	go m.waitForExit(cmd, "")
+	resp := StartResponse{OK: true, Message: "Dataset prep started."}
+	if action == "resize" || action == "all" {
+		resp.PreparedPath = filepath.ToSlash(absPath(preparedDatasetPath(m.root, s)))
+	}
+	return resp, nil
+}
+
 func (m *Manager) Stop() (StartResponse, error) {
 	m.mu.Lock()
 	cmd := m.trainingCmd
@@ -308,6 +385,105 @@ func trainingEnv(trainDir string) []string {
 	env = append(env, "CUDA_VISIBLE_DEVICES=0")
 	env = append(env, "ACCELERATE_USE_CPU=False")
 	return env
+}
+
+func datasetPrepArgs(root, action string, s Settings) []string {
+	tagArgs := datasetTagArgs(root, s)
+	resizeArgs := datasetResizeArgs(root, s)
+	switch action {
+	case "tag":
+		return tagArgs
+	case "resize":
+		return resizeArgs
+	default:
+		payload, _ := json.Marshal([][]string{tagArgs, resizeArgs})
+		script := `
+import json
+import subprocess
+import sys
+
+for command in json.loads(sys.argv[1]):
+    print("$ " + " ".join(command), flush=True)
+    subprocess.check_call(command)
+`
+		return []string{"-c", script, string(payload)}
+	}
+}
+
+func datasetTagArgs(root string, s Settings) []string {
+	args := []string{
+		filepath.Join(root, "training", "sd-scripts", "finetune", "tag_images_by_wd14_tagger.py"),
+		filepath.ToSlash(absPath(s.DatasetPath)),
+		"--repo_id", "wd-eva02-large-tagger-v3",
+		"--model_dir", filepath.ToSlash(absPath(filepath.Join(root, "models"))),
+		"--onnx",
+		"--caption_extension", ".txt",
+		"--general_threshold", fmt.Sprintf("%.4f", s.TaggerGenThreshold),
+		"--character_threshold", fmt.Sprintf("%.4f", s.TaggerCharThreshold),
+		"--batch_size", "1",
+		"--max_data_loader_n_workers", "2",
+	}
+	if !s.TaggerOverwrite {
+		args = append(args, "--append_tags")
+	}
+	return args
+}
+
+func datasetResizeArgs(root string, s Settings) []string {
+	maxSide := s.SideMax
+	if maxSide <= 0 {
+		maxSide = 768
+	}
+	resolution := fmt.Sprintf("%dx%d", maxSide, maxSide)
+	return []string{
+		filepath.Join(root, "training", "sd-scripts", "tools", "resize_images_to_resolution.py"),
+		filepath.ToSlash(absPath(s.DatasetPath)),
+		filepath.ToSlash(absPath(preparedDatasetPath(root, s))),
+		"--max_resolution", resolution,
+		"--divisible_by", "64",
+		"--copy_associated_files",
+	}
+}
+
+func preparedDatasetPath(root string, s Settings) string {
+	name := sanitizeProjectName(s.TriggerWord)
+	if name == "untitled" {
+		name = sanitizeProjectName(filepath.Base(strings.TrimRight(s.DatasetPath, string(os.PathSeparator))))
+	}
+	return filepath.Join(root, "training", "prepared", name)
+}
+
+func datasetPrepLabel(action string) string {
+	switch action {
+	case "tag":
+		return "caption tagging"
+	case "resize":
+		return "resize/copy"
+	default:
+		return "caption tagging and resize/copy"
+	}
+}
+
+func validatePrepModels(root string) error {
+	required := map[string]bool{
+		filepath.Join(root, "models", "wd-eva02-large-tagger-v3", "model.onnx"):        false,
+		filepath.Join(root, "models", "wd-eva02-large-tagger-v3", "selected_tags.csv"): false,
+	}
+	for _, file := range modelops.OptionalFiles(root) {
+		if _, ok := required[file.Path]; ok && fileExists(file.Path) {
+			required[file.Path] = true
+		}
+	}
+	var missing []string
+	for path, ok := range required {
+		if !ok {
+			missing = append(missing, path)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("prep model files missing; click Models Tool, then Download Prep:\n%s", strings.Join(missing, "\n"))
+	}
+	return nil
 }
 
 func scanLogChunk(data []byte, atEOF bool) (advance int, token []byte, err error) {

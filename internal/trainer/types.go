@@ -91,6 +91,7 @@ type ImageItem struct {
 }
 
 type StartResponse struct {
-	OK      bool   `json:"ok"`
-	Message string `json:"message"`
+	OK           bool   `json:"ok"`
+	Message      string `json:"message"`
+	PreparedPath string `json:"prepared_path,omitempty"`
 }

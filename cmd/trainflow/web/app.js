@@ -60,6 +60,9 @@ const stopButton = document.getElementById("stopButton");
 const quitButton = document.getElementById("quitButton");
 const saveButton = document.getElementById("saveButton");
 const openOutputButton = document.getElementById("openOutputButton");
+const tagDatasetButton = document.getElementById("tagDatasetButton");
+const resizeDatasetButton = document.getElementById("resizeDatasetButton");
+const prepDatasetButton = document.getElementById("prepDatasetButton");
 const monitorToggle = document.getElementById("monitorToggle");
 const hardwareOverlay = document.getElementById("hardwareOverlay");
 const gallery = document.getElementById("gallery");
@@ -157,6 +160,28 @@ async function startTraining() {
     const resp = await api("/api/train/start", {
       method: "POST",
       body: JSON.stringify(collectSettings())
+    });
+    setStatus(resp.message, resp.ok);
+    if (resp.ok && resp.prepared_path) {
+      els.dataset_path.value = resp.prepared_path;
+      queueSave();
+    }
+    if (!resp.ok) setRunning(false);
+  } catch (err) {
+    setStatus(err.message, false);
+    setRunning(false);
+  }
+}
+
+async function runDatasetPrep(action) {
+  setRunning(true);
+  try {
+    const resp = await api("/api/dataset/prep", {
+      method: "POST",
+      body: JSON.stringify({
+        action,
+        settings: collectSettings()
+      })
     });
     setStatus(resp.message, resp.ok);
     if (!resp.ok) setRunning(false);
@@ -294,6 +319,9 @@ function setStatus(text, ok = true) {
 function setRunning(value) {
   running = value;
   startButton.disabled = value;
+  tagDatasetButton.disabled = value;
+  resizeDatasetButton.disabled = value;
+  prepDatasetButton.disabled = value;
   stopButton.disabled = !value;
   statusText.textContent = value ? "Training" : "Idle";
 }
@@ -513,6 +541,9 @@ for (const button of document.querySelectorAll(".browse-button")) {
 saveButton.addEventListener("click", saveSettings);
 openOutputButton.addEventListener("click", openOutputFolder);
 startButton.addEventListener("click", startTraining);
+tagDatasetButton.addEventListener("click", () => runDatasetPrep("tag"));
+resizeDatasetButton.addEventListener("click", () => runDatasetPrep("resize"));
+prepDatasetButton.addEventListener("click", () => runDatasetPrep("all"));
 stopButton.addEventListener("click", stopTraining);
 quitButton.addEventListener("click", quitApp);
 runtimeLaunch.addEventListener("click", launchRuntimeTool);
