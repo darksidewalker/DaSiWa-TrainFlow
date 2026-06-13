@@ -14,18 +14,18 @@
         <div class="top-status">
           <p id="statusText">Idle</p>
           <span id="runtimeStatus" class="runtime-pill checking">Runtime checking</span>
-          <button id="runtimeLaunch" class="runtime-action hidden" title="Open the runtime installer">Runtime Tool</button>
+          <button id="runtimeLaunch" class="runtime-action hidden" title="Launch TrainFlow_Runtime_Tool and open http://127.0.0.1:7870 to install or repair the Python runtime.">Runtime Tool</button>
           <span id="modelStatus" class="runtime-pill checking">Models checking</span>
-          <button id="modelLaunch" class="runtime-action hidden" title="Open the runtime tool to download models">Models Tool</button>
+          <button id="modelLaunch" class="runtime-action hidden" title="Launch TrainFlow_Runtime_Tool and open http://127.0.0.1:7870. Use Download Models for base models or Download Prep for tagger models.">Models Tool</button>
         </div>
       </div>
       <div class="actions">
         <button id="monitorToggle" class="icon-button" title="Toggle hardware overlay">HW</button>
-        <button id="openOutputButton" class="secondary">Output</button>
-        <button id="saveButton" class="secondary">Save</button>
-        <button id="startButton" class="primary">Start</button>
-        <button id="stopButton" class="danger">Stop</button>
-        <button id="quitButton" class="danger">Quit</button>
+        <button id="openOutputButton" class="secondary" title="Open the current project output folder. Creates it if it does not exist.">Output</button>
+        <button id="saveButton" class="secondary" title="Save the current settings to training/settings.json. Fields also autosave after edits.">Save</button>
+        <button id="startButton" class="primary" title="Start LoRA training with the current settings and write configs, samples, and checkpoints under training/output.">Start</button>
+        <button id="stopButton" class="danger" title="Stop the running training or dataset-prep process.">Stop</button>
+        <button id="quitButton" class="danger" title="Shut down the local TrainFlow web server.">Quit</button>
       </div>
     </header>
 
@@ -213,9 +213,9 @@
               <span>Overwrite captions</span>
             </label>
             <div class="prep-actions">
-              <button id="tagDatasetButton" class="secondary">Tag Captions</button>
-              <button id="resizeDatasetButton" class="secondary">Resize Copy</button>
-              <button id="prepDatasetButton" class="primary">Tag + Resize</button>
+              <button id="tagDatasetButton" class="secondary" title="Run the WD ONNX tagger on the current Dataset Path. Writes .txt captions beside the source images. If Overwrite captions is off, new tags are appended.">Tag Captions</button>
+              <button id="resizeDatasetButton" class="secondary" title="Copy and resize images from the current Dataset Path into training/prepared/<project>. Captions are copied too, and Dataset Path switches to the prepared folder.">Resize Copy</button>
+              <button id="prepDatasetButton" class="primary" title="Run caption tagging first, then create the resized prepared copy. Dataset Path switches to training/prepared/<project> when started.">Tag + Resize</button>
             </div>
             <div class="muted-line">Tagging writes .txt captions beside the source images. Resize Copy writes a prepared copy under training/prepared.</div>
           </div>
