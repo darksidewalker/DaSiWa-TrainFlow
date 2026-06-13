@@ -132,7 +132,11 @@ func createTrainingTOML(projectName string, s Settings, outputDir, promptPath, o
 	content.WriteString("cache_latents_to_disk = true\n")
 	content.WriteString("cache_text_encoder_outputs = true\n")
 	content.WriteString("cache_text_encoder_outputs_to_disk = true\n")
-	content.WriteString("attn_mode = \"sdpa\"\n")
+	attnMode := "torch"
+	if s.FlashAttention {
+		attnMode = "flash"
+	}
+	content.WriteString(fmt.Sprintf("attn_mode = %s\n", tomlString(attnMode)))
 	content.WriteString("save_model_as = \"safetensors\"\n")
 	content.WriteString("save_precision = \"bf16\"\n")
 	content.WriteString("max_data_loader_n_workers = 4\n")

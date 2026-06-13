@@ -19,6 +19,7 @@ const fields = [
   "train_batch_size",
   "gradient_accumulation_steps",
   "train_unet_only",
+  "flash_attention",
   "resume_enabled",
   "auto_resume",
   "resume_path",
@@ -58,6 +59,7 @@ const startButton = document.getElementById("startButton");
 const stopButton = document.getElementById("stopButton");
 const quitButton = document.getElementById("quitButton");
 const saveButton = document.getElementById("saveButton");
+const openOutputButton = document.getElementById("openOutputButton");
 const monitorToggle = document.getElementById("monitorToggle");
 const hardwareOverlay = document.getElementById("hardwareOverlay");
 const gallery = document.getElementById("gallery");
@@ -180,9 +182,25 @@ async function quitApp() {
     startButton.disabled = true;
     stopButton.disabled = true;
     saveButton.disabled = true;
+    openOutputButton.disabled = true;
     quitButton.disabled = true;
   } catch (err) {
     setStatus(err.message, false);
+  }
+}
+
+async function openOutputFolder() {
+  openOutputButton.disabled = true;
+  try {
+    const resp = await api("/api/output/open", {
+      method: "POST",
+      body: JSON.stringify(collectSettings())
+    });
+    setStatus(resp.message, resp.ok);
+  } catch (err) {
+    setStatus(err.message, false);
+  } finally {
+    openOutputButton.disabled = false;
   }
 }
 
@@ -487,6 +505,7 @@ for (const button of document.querySelectorAll(".browse-button")) {
 }
 
 saveButton.addEventListener("click", saveSettings);
+openOutputButton.addEventListener("click", openOutputFolder);
 startButton.addEventListener("click", startTraining);
 stopButton.addEventListener("click", stopTraining);
 quitButton.addEventListener("click", quitApp);

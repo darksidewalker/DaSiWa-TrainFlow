@@ -92,7 +92,22 @@ func installTrainerDeps(root string, installer dependencyInstaller, log Logger) 
 		return err
 	}
 	log("Installing TrainFlow UI/prep dependencies...")
-	return installer.install("gradio", "psutil", "toml", "pillow", "onnxruntime-gpu", "pandas", "opencv-python")
+	if err := installer.install("gradio", "psutil", "toml", "pillow", "onnxruntime-gpu", "pandas", "opencv-python"); err != nil {
+		return err
+	}
+	installOptionalFlashAttention(installer, log)
+	return nil
+}
+
+func installOptionalFlashAttention(installer dependencyInstaller, log Logger) {
+	if runtime.GOOS == "windows" {
+		log("Skipping optional flash-attn install on Windows.")
+		return
+	}
+	log("Installing optional Flash Attention support...")
+	if err := installer.install("--no-build-isolation", "flash-attn"); err != nil {
+		log("Optional flash-attn install failed; Flash Attention checkbox will require a manual compatible install: " + err.Error())
+	}
 }
 
 type dependencyInstaller struct {

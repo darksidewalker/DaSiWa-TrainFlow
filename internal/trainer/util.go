@@ -244,6 +244,19 @@ func validatePythonRuntime(python string) error {
 	return nil
 }
 
+func validateFlashAttentionRuntime(python string) error {
+	cmd := exec.Command(python, "-c", "import flash_attn")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg != "" {
+			return fmt.Errorf("Flash Attention is enabled but flash-attn is not available: %s", msg)
+		}
+		return fmt.Errorf("Flash Attention is enabled but flash-attn is not available: %w", err)
+	}
+	return nil
+}
+
 func findLastStateDir(outputDir string) string {
 	entries, err := os.ReadDir(outputDir)
 	if err != nil {

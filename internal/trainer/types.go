@@ -28,6 +28,7 @@ type Settings struct {
 	TrainBatchSize            int     `json:"train_batch_size"`
 	GradientAccumulationSteps int     `json:"gradient_accumulation_steps"`
 	TrainUNetOnly             bool    `json:"train_unet_only"`
+	FlashAttention            bool    `json:"flash_attention"`
 	ResumeEnabled             bool    `json:"resume_enabled"`
 	AutoResume                bool    `json:"auto_resume"`
 	ResumePath                string  `json:"resume_path"`
@@ -63,6 +64,7 @@ func DefaultSettings(root string) Settings {
 		TrainBatchSize:            1,
 		GradientAccumulationSteps: 1,
 		TrainUNetOnly:             true,
+		FlashAttention:            false,
 		ResumeEnabled:             false,
 		AutoResume:                true,
 		ResumePath:                home,

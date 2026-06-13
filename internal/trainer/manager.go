@@ -127,6 +127,11 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 	if err := validatePythonRuntime(python); err != nil {
 		return StartResponse{OK: false, Message: err.Error()}, err
 	}
+	if s.FlashAttention {
+		if err := validateFlashAttentionRuntime(python); err != nil {
+			return StartResponse{OK: false, Message: err.Error()}, err
+		}
+	}
 	trainDir := filepath.Join(m.root, "training", "sd-scripts")
 	trainScript := filepath.Join(trainDir, "anima_train_network.py")
 	args := []string{

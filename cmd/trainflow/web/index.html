@@ -21,6 +21,7 @@
       </div>
       <div class="actions">
         <button id="monitorToggle" class="icon-button" title="Toggle hardware overlay">HW</button>
+        <button id="openOutputButton" class="secondary">Output</button>
         <button id="saveButton" class="secondary">Save</button>
         <button id="startButton" class="primary">Start</button>
         <button id="stopButton" class="danger">Stop</button>
@@ -113,6 +114,10 @@
           <label class="check-row">
             <input id="train_unet_only" type="checkbox">
             <span>Train UNet Only</span>
+          </label>
+          <label class="check-row">
+            <input id="flash_attention" type="checkbox">
+            <span>Flash Attention</span>
           </label>
           <div class="muted-line">Freeze text encoder. Recommended for most LoRA training.</div>
         </section>

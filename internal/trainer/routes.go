@@ -117,6 +117,36 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 		writeJSON(w, resp)
 	})
 
+	mux.HandleFunc("/api/output/open", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var settings Settings
+		if err := decodeJSON(r, &settings); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(settings.TriggerWord) == "" {
+			writeJSON(w, StartResponse{OK: false, Message: "Set a trigger/project name first."})
+			return
+		}
+		if err := manager.SaveSettings(settings); err != nil {
+			writeJSON(w, StartResponse{OK: false, Message: err.Error()})
+			return
+		}
+		path := outputProject(manager.root, settings.TriggerWord)
+		if err := os.MkdirAll(path, 0755); err != nil {
+			writeJSON(w, StartResponse{OK: false, Message: err.Error()})
+			return
+		}
+		if err := openFolder(path); err != nil {
+			writeJSON(w, StartResponse{OK: false, Message: err.Error()})
+			return
+		}
+		writeJSON(w, StartResponse{OK: true, Message: "Opened output folder."})
+	})
+
 	mux.HandleFunc("/api/images", func(w http.ResponseWriter, r *http.Request) {
 		settings := manager.Settings()
 		writeJSON(w, listLatestImages(filepath.Join(outputProject(manager.root, settings.TriggerWord), "sample")))
@@ -216,6 +246,19 @@ func launchRuntimeTool(root string) error {
 	}
 	cmd := exec.Command(path)
 	cmd.Dir = root
+	return cmd.Start()
+}
+
+func openFolder(path string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("explorer", path)
+	case "darwin":
+		cmd = exec.Command("open", path)
+	default:
+		cmd = exec.Command("xdg-open", path)
+	}
 	return cmd.Start()
 }
 
