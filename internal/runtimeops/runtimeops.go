@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,11 @@ type Logger func(string)
 const (
 	pythonVersion = "3.12.10"
 	pythonTag     = "312"
+
+	flashAttentionPackage               = "flash_attn"
+	flashAttentionPyPIName              = "flash-attn"
+	flashAttentionMinBuildMemoryBytes   = uint64(96 * 1024 * 1024 * 1024)
+	flashAttentionDefaultReleaseVersion = "2.8.3"
 )
 
 func InstallRequirements(root string, installFlashAttention bool, log Logger) error {
@@ -108,14 +114,45 @@ func installOptionalFlashAttention(installer dependencyInstaller, log Logger) {
 		log("Skipping optional flash-attn install on Windows.")
 		return
 	}
-	log("Installing optional Flash Attention support...")
-	if err := installer.install("--only-binary=:all:", "flash-attn"); err == nil {
+	info, infoErr := detectTorchCUDAInfo(installer.python)
+	if infoErr != nil {
+		log("Could not detect Torch/CUDA ABI for flash-attn wheel matching: " + infoErr.Error())
+	}
+	log("Installing optional Flash Attention support from a prebuilt wheel only...")
+	if infoErr == nil {
+		version := flashAttentionReleaseVersion(log)
+		wheelURL, wheelName := flashAttentionWheelURL(version, info)
+		log("Trying Flash Attention release wheel: " + wheelName)
+		if err := installer.install(wheelURL); err == nil {
+			log("Installed Flash Attention prebuilt release wheel.")
+			return
+		} else {
+			log("No compatible Flash Attention release wheel was found: " + err.Error())
+		}
+	}
+	if err := installer.install("--only-binary=:all:", flashAttentionPyPIName); err == nil {
+		log("Installed Flash Attention prebuilt PyPI wheel.")
 		return
 	} else {
-		log("No compatible prebuilt flash-attn wheel was found: " + err.Error())
+		log("No compatible prebuilt Flash Attention PyPI wheel was found: " + err.Error())
+	}
+	if info.CUDA != "" && isCUDA13(info.CUDA) {
+		log("CUDA " + info.CUDA + " detected. Skipping flash-attn source build for the CUDA 13.0 runtime; leave TrainFlow Flash Attention off and use the default torch/SDPA attention path.")
+		return
+	}
+	if infoErr != nil {
+		log("Skipping flash-attn source build because the Torch/CUDA ABI could not be verified.")
+		return
 	}
 	if os.Getenv("DASIWA_FLASH_ATTN_SOURCE_BUILD") != "1" {
 		log("Skipping flash-attn source build because it can require extreme RAM/swap. Set DASIWA_FLASH_ATTN_SOURCE_BUILD=1 to opt in manually.")
+		return
+	}
+	if ok, detail, err := flashAttentionBuildMemoryOK(); err != nil {
+		log("Skipping flash-attn source build because available RAM/swap could not be checked: " + err.Error())
+		return
+	} else if !ok {
+		log("Skipping flash-attn source build because available RAM/swap is too low (" + detail + "); require at least 96 GiB to avoid OOM.")
 		return
 	}
 	log("Installing Flash Attention build helpers...")
@@ -127,23 +164,194 @@ func installOptionalFlashAttention(installer dependencyInstaller, log Logger) {
 	env := []string{
 		"MAX_JOBS=" + jobs,
 		"NVCC_THREADS=" + jobs,
+		"CMAKE_BUILD_PARALLEL_LEVEL=" + jobs,
+		"NINJAFLAGS=-j" + jobs,
 		"FLASH_ATTENTION_FORCE_BUILD=TRUE",
 	}
+	if archs := flashAttentionCUDAArchs(info.Archs); archs != "" {
+		env = append(env, "FLASH_ATTN_CUDA_ARCHS="+archs, "TORCH_CUDA_ARCH_LIST="+torchCUDAArchList(info.Archs))
+	}
 	log("Building Flash Attention from source with MAX_JOBS=" + jobs + "...")
-	if err := installer.installWithEnv(env, "--no-build-isolation", "flash-attn"); err != nil {
+	if err := installer.installWithEnv(env, "--no-build-isolation", flashAttentionPyPIName); err != nil {
 		log("Optional flash-attn source build failed; Flash Attention checkbox will require a manual compatible install: " + err.Error())
 	}
 }
 
 func flashAttentionBuildJobs() string {
-	cpus := runtime.NumCPU()
-	if cpus < 1 {
-		cpus = 1
+	return "1"
+}
+
+type torchCUDAInfo struct {
+	CUDA      string   `json:"cuda"`
+	Torch     string   `json:"torch"`
+	PythonTag string   `json:"python_tag"`
+	Platform  string   `json:"platform"`
+	CXX11ABI  string   `json:"cxx11abi"`
+	Archs     []string `json:"archs"`
+}
+
+func detectTorchCUDAInfo(python string) (torchCUDAInfo, error) {
+	script := `
+import json
+import platform
+import sys
+import torch
+
+platform_name = "linux_" + platform.uname().machine
+archs = []
+if torch.cuda.is_available():
+    for index in range(torch.cuda.device_count()):
+        major, minor = torch.cuda.get_device_capability(index)
+        archs.append(f"{major}{minor}")
+torch_version = torch.__version__.split("+", 1)[0].split(".")
+print(json.dumps({
+    "cuda": torch.version.cuda or "",
+    "torch": ".".join(torch_version[:2]),
+    "python_tag": f"cp{sys.version_info.major}{sys.version_info.minor}",
+    "platform": platform_name,
+    "cxx11abi": str(torch._C._GLIBCXX_USE_CXX11_ABI).upper(),
+    "archs": sorted(set(archs)),
+}))
+`
+	cmd := exec.Command(python, "-c", script)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return torchCUDAInfo{}, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
-	if cpus > 2 {
-		cpus = 2
+	var info torchCUDAInfo
+	if err := json.Unmarshal(out, &info); err != nil {
+		return torchCUDAInfo{}, err
 	}
-	return fmt.Sprintf("%d", cpus)
+	if info.CUDA == "" || info.Torch == "" || info.PythonTag == "" || info.Platform == "" || info.CXX11ABI == "" {
+		return torchCUDAInfo{}, errors.New("incomplete Torch/CUDA info")
+	}
+	return info, nil
+}
+
+func flashAttentionReleaseVersion(log Logger) string {
+	if version := strings.TrimSpace(os.Getenv("DASIWA_FLASH_ATTN_VERSION")); version != "" {
+		log("Using Flash Attention version from DASIWA_FLASH_ATTN_VERSION=" + version)
+		return version
+	}
+	version, err := latestFlashAttentionVersion()
+	if err != nil {
+		log("Could not read latest Flash Attention version from PyPI; trying " + flashAttentionDefaultReleaseVersion + ": " + err.Error())
+		return flashAttentionDefaultReleaseVersion
+	}
+	return version
+}
+
+func latestFlashAttentionVersion() (string, error) {
+	client := http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Get("https://pypi.org/pypi/" + flashAttentionPyPIName + "/json")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("PyPI returned %s", resp.Status)
+	}
+	var body struct {
+		Info struct {
+			Version string `json:"version"`
+		} `json:"info"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", err
+	}
+	if body.Info.Version == "" {
+		return "", errors.New("PyPI response did not include info.version")
+	}
+	return body.Info.Version, nil
+}
+
+func flashAttentionWheelURL(version string, info torchCUDAInfo) (string, string) {
+	cudaMajor := strings.Split(info.CUDA, ".")[0]
+	wheelName := fmt.Sprintf(
+		"%s-%s+cu%storch%scxx11abi%s-%s-%s-%s.whl",
+		flashAttentionPackage,
+		version,
+		cudaMajor,
+		info.Torch,
+		info.CXX11ABI,
+		info.PythonTag,
+		info.PythonTag,
+		info.Platform,
+	)
+	return fmt.Sprintf(
+		"https://github.com/Dao-AILab/flash-attention/releases/download/v%s/%s",
+		version,
+		wheelName,
+	), wheelName
+}
+
+func isCUDA13(version string) bool {
+	return strings.HasPrefix(strings.TrimSpace(version), "13.")
+}
+
+func flashAttentionBuildMemoryOK() (bool, string, error) {
+	if runtime.GOOS != "linux" {
+		return false, "", errors.New("only Linux /proc/meminfo is supported")
+	}
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return false, "", err
+	}
+	values := map[string]uint64{}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		key := strings.TrimSuffix(fields[0], ":")
+		var value uint64
+		if _, err := fmt.Sscanf(fields[1], "%d", &value); err != nil {
+			continue
+		}
+		values[key] = value * 1024
+	}
+	available := values["MemAvailable"] + values["SwapFree"]
+	if available == 0 {
+		return false, "", errors.New("MemAvailable and SwapFree were not present")
+	}
+	return available >= flashAttentionMinBuildMemoryBytes, humanBytes(available), nil
+}
+
+func humanBytes(value uint64) string {
+	const gib = 1024 * 1024 * 1024
+	if value >= gib {
+		return fmt.Sprintf("%.1f GiB", float64(value)/float64(gib))
+	}
+	const mib = 1024 * 1024
+	return fmt.Sprintf("%.1f MiB", float64(value)/float64(mib))
+}
+
+func flashAttentionCUDAArchs(archs []string) string {
+	seen := map[string]bool{}
+	var out []string
+	for _, arch := range archs {
+		arch = strings.TrimSpace(arch)
+		if arch == "" || seen[arch] {
+			continue
+		}
+		seen[arch] = true
+		out = append(out, arch)
+	}
+	return strings.Join(out, ";")
+}
+
+func torchCUDAArchList(archs []string) string {
+	seen := map[string]bool{}
+	var out []string
+	for _, arch := range archs {
+		arch = strings.TrimSpace(arch)
+		if len(arch) < 2 || seen[arch] {
+			continue
+		}
+		seen[arch] = true
+		out = append(out, arch[:len(arch)-1]+"."+arch[len(arch)-1:])
+	}
+	return strings.Join(out, ";")
 }
 
 type dependencyInstaller struct {

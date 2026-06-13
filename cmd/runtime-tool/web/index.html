@@ -32,10 +32,10 @@
     </label>
     <label class="check-row">
       <input id="installFlashAttention" type="checkbox">
-      <span>Install Flash Attention (optional, wheel only)</span>
+      <span>Install Flash Attention wheel (optional)</span>
     </label>
     <section class="note">
-      <p>Windows updates `python_embeded/windows` with the official Python 3.12 embeddable package. Linux creates `python_embeded/linux` as a local venv using `python3.12` or `python3` from PATH. Dependencies install with uv first and fall back to pip if needed. Backups are deleted after a successful update unless the checkbox is enabled. Flash Attention is skipped unless selected, and source builds are skipped unless explicitly enabled with `DASIWA_FLASH_ATTN_SOURCE_BUILD=1`.</p>
+      <p>Windows updates `python_embeded/windows` with the official Python 3.12 embeddable package. Linux creates `python_embeded/linux` as a local venv using `python3.12` or `python3` from PATH. Dependencies install with uv first and fall back to pip if needed. Backups are deleted after a successful update unless the checkbox is enabled. Flash Attention is skipped unless selected, CUDA 13.0 uses the default torch/SDPA attention path when no compatible wheel exists, and local flash-attn source builds are guarded because they can exhaust RAM and swap.</p>
     </section>
     <pre id="logs"></pre>
   </main>
