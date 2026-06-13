@@ -70,11 +70,8 @@ func listLatestImages(dir string) []ImageItem {
 			continue
 		}
 		files = append(files, candidate{
-			item: ImageItem{
-				Src:  "/samples/" + filepath.ToSlash(filepath.Base(filepath.Dir(dir))) + "/" + entry.Name(),
-				Name: entry.Name(),
-			},
-			mod: info.ModTime().UnixNano(),
+			item: sampleImageItem(dir, entry.Name()),
+			mod:  info.ModTime().UnixNano(),
 		})
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].mod > files[j].mod })
@@ -83,6 +80,40 @@ func listLatestImages(dir string) []ImageItem {
 		images = append(images, file.item)
 	}
 	return images
+}
+
+func sampleImageItem(dir, name string) ImageItem {
+	step := sampleStepFromName(name)
+	item := ImageItem{
+		Src:  "/samples/" + filepath.ToSlash(filepath.Base(filepath.Dir(dir))) + "/" + name,
+		Name: name,
+		Step: step,
+	}
+	if step > 0 {
+		item.Label = fmt.Sprintf("Step %d", step)
+	}
+	return item
+}
+
+func sampleStepFromName(name string) int {
+	stem := strings.TrimSuffix(name, filepath.Ext(name))
+	parts := strings.Split(stem, "_")
+	if len(parts) < 2 {
+		return 0
+	}
+	if len(parts) >= 4 {
+		step, err := strconv.Atoi(parts[len(parts)-4])
+		if err == nil && step > 0 {
+			return step
+		}
+	}
+	for _, part := range parts {
+		step, err := strconv.Atoi(part)
+		if err == nil && step > 0 {
+			return step
+		}
+	}
+	return 0
 }
 
 func analyzeDatasetResolution(datasetPath string) (int, int) {

@@ -42,3 +42,10 @@ func TestAppendTrainingLogReplacesProgressLine(t *testing.T) {
 		t.Fatalf("logs = %q, want %q", got, want)
 	}
 }
+
+func TestSampleStepFromName(t *testing.T) {
+	got := sampleStepFromName("untitled_001100_00_20260613144549_42.png")
+	if got != 1100 {
+		t.Fatalf("step = %d, want 1100", got)
+	}
+}

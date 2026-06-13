@@ -316,6 +316,7 @@ textarea:focus {
 }
 
 .gallery figure {
+  position: relative;
   margin: 0;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -329,6 +330,27 @@ textarea:focus {
   height: 100%;
   object-fit: contain;
   display: block;
+}
+
+.preview-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  max-width: calc(100% - 16px);
+  padding: 3px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(5, 8, 12, 0.58);
+  color: rgba(240, 243, 247, 0.94);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
 }
 
 .gallery figcaption {

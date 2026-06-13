@@ -367,7 +367,7 @@ function chooseCurrentPath() {
 }
 
 function renderGallery(images) {
-  galleryImages = images ? images.slice(0, 8) : [];
+  galleryImages = images || [];
   gallery.innerHTML = "";
   if (!galleryImages.length) {
     const empty = document.createElement("div");
@@ -382,8 +382,14 @@ function renderGallery(images) {
     const img = document.createElement("img");
     img.src = `${image.src}?t=${Date.now()}`;
     img.alt = image.name;
+    if (image.label) {
+      const badge = document.createElement("div");
+      badge.className = "preview-badge";
+      badge.textContent = image.label;
+      figure.append(badge);
+    }
     const cap = document.createElement("figcaption");
-    cap.textContent = image.name;
+    cap.textContent = image.label ? `${image.label} - ${image.name}` : image.name;
     figure.append(img, cap);
     figure.addEventListener("click", () => openImageOverlay(index));
     gallery.append(figure);

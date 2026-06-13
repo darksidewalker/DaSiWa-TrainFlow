@@ -84,8 +84,10 @@ func defaultSettingsPath(root string) string {
 }
 
 type ImageItem struct {
-	Src  string `json:"src"`
-	Name string `json:"name"`
+	Src   string `json:"src"`
+	Name  string `json:"name"`
+	Step  int    `json:"step,omitempty"`
+	Label string `json:"label,omitempty"`
 }
 
 type StartResponse struct {
