@@ -27,6 +27,7 @@ const (
 	flashAttentionPyPIName              = "flash-attn"
 	flashAttentionMinBuildMemoryBytes   = uint64(96 * 1024 * 1024 * 1024)
 	flashAttentionDefaultReleaseVersion = "2.8.3"
+	flashAttentionPrebuildReleasesAPI   = "https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases?per_page=100"
 )
 
 func InstallRequirements(root string, installFlashAttention bool, log Logger) error {
@@ -119,6 +120,15 @@ func installOptionalFlashAttention(installer dependencyInstaller, log Logger) {
 		log("Could not detect Torch/CUDA ABI for flash-attn wheel matching: " + infoErr.Error())
 	}
 	log("Installing optional Flash Attention support from a prebuilt wheel only...")
+	if wheelURL := strings.TrimSpace(os.Getenv("DASIWA_FLASH_ATTN_WHEEL_URL")); wheelURL != "" {
+		log("Trying Flash Attention wheel from DASIWA_FLASH_ATTN_WHEEL_URL...")
+		if err := installer.install(wheelURL); err == nil {
+			log("Installed Flash Attention wheel from DASIWA_FLASH_ATTN_WHEEL_URL.")
+			return
+		} else {
+			log("Flash Attention wheel URL failed: " + err.Error())
+		}
+	}
 	if infoErr == nil {
 		version := flashAttentionReleaseVersion(log)
 		wheelURL, wheelName := flashAttentionWheelURL(version, info)
@@ -128,6 +138,22 @@ func installOptionalFlashAttention(installer dependencyInstaller, log Logger) {
 			return
 		} else {
 			log("No compatible Flash Attention release wheel was found: " + err.Error())
+		}
+	}
+	if infoErr == nil {
+		candidate, err := findPrebuiltFlashAttentionWheel(info)
+		if err != nil {
+			log("Could not search flash-attention-prebuild-wheels releases: " + err.Error())
+		} else if candidate.URL != "" {
+			log("Trying community prebuilt Flash Attention wheel from " + candidate.Source + ": " + candidate.Name)
+			if err := installer.install(candidate.URL); err == nil {
+				log("Installed community prebuilt Flash Attention wheel.")
+				return
+			} else {
+				log("Community prebuilt Flash Attention wheel failed: " + err.Error())
+			}
+		} else {
+			log("No matching community prebuilt Flash Attention wheel was found.")
 		}
 	}
 	if err := installer.install("--only-binary=:all:", flashAttentionPyPIName); err == nil {
@@ -190,6 +216,12 @@ type torchCUDAInfo struct {
 	Archs     []string `json:"archs"`
 }
 
+type flashAttentionWheelCandidate struct {
+	Name   string
+	URL    string
+	Source string
+}
+
 func detectTorchCUDAInfo(python string) (torchCUDAInfo, error) {
 	script := `
 import json
@@ -226,6 +258,95 @@ print(json.dumps({
 		return torchCUDAInfo{}, errors.New("incomplete Torch/CUDA info")
 	}
 	return info, nil
+}
+
+func findPrebuiltFlashAttentionWheel(info torchCUDAInfo) (flashAttentionWheelCandidate, error) {
+	req, err := http.NewRequest(http.MethodGet, flashAttentionPrebuildReleasesAPI, nil)
+	if err != nil {
+		return flashAttentionWheelCandidate{}, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "DaSiWa-TrainFlow")
+	client := http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return flashAttentionWheelCandidate{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return flashAttentionWheelCandidate{}, fmt.Errorf("GitHub returned %s", resp.Status)
+	}
+	var releases []struct {
+		TagName string `json:"tag_name"`
+		Assets  []struct {
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return flashAttentionWheelCandidate{}, err
+	}
+	var best flashAttentionWheelCandidate
+	bestScore := -1
+	for _, release := range releases {
+		for _, asset := range release.Assets {
+			if !matchesPrebuiltFlashAttentionWheel(asset.Name, info) {
+				continue
+			}
+			score := prebuiltFlashAttentionWheelScore(asset.Name)
+			if score > bestScore {
+				bestScore = score
+				best = flashAttentionWheelCandidate{
+					Name:   asset.Name,
+					URL:    asset.BrowserDownloadURL,
+					Source: "mjun0812/flash-attention-prebuild-wheels@" + release.TagName,
+				}
+			}
+		}
+	}
+	return best, nil
+}
+
+func matchesPrebuiltFlashAttentionWheel(name string, info torchCUDAInfo) bool {
+	if !strings.HasPrefix(name, flashAttentionPackage+"-") || !strings.HasSuffix(name, ".whl") {
+		return false
+	}
+	cudaLabel := "cu" + strings.ReplaceAll(info.CUDA, ".", "")
+	if !strings.Contains(name, "+"+cudaLabel+"torch"+info.Torch+"-") {
+		return false
+	}
+	if !strings.Contains(name, "-"+info.PythonTag+"-"+info.PythonTag+"-") && !strings.Contains(name, "-abi3-") {
+		return false
+	}
+	return wheelPlatformMatches(name, info.Platform)
+}
+
+func wheelPlatformMatches(name, platform string) bool {
+	switch {
+	case strings.Contains(platform, "x86_64") || strings.Contains(platform, "amd64"):
+		return strings.Contains(name, "x86_64") || strings.Contains(name, "amd64")
+	case strings.Contains(platform, "aarch64") || strings.Contains(platform, "arm64"):
+		return strings.Contains(name, "aarch64") || strings.Contains(name, "arm64")
+	default:
+		return strings.Contains(name, platform)
+	}
+}
+
+func prebuiltFlashAttentionWheelScore(name string) int {
+	score := 0
+	if strings.Contains(name, "manylinux") {
+		score += 100
+	}
+	if strings.Contains(name, "2.8.3") {
+		score += 30
+	}
+	if strings.Contains(name, "2.7.4") {
+		score += 20
+	}
+	if strings.Contains(name, "2.6.3") {
+		score += 10
+	}
+	return score
 }
 
 func flashAttentionReleaseVersion(log Logger) string {

@@ -42,3 +42,33 @@ func TestTorchCUDAArchListSupportsThreeDigitArchitectures(t *testing.T) {
 		t.Fatalf("arch list = %q, want %q", got, want)
 	}
 }
+
+func TestMatchesPrebuiltFlashAttentionWheel(t *testing.T) {
+	info := torchCUDAInfo{
+		CUDA:      "13.0",
+		Torch:     "2.12",
+		PythonTag: "cp312",
+		Platform:  "linux_x86_64",
+	}
+	matches := []string{
+		"flash_attn-2.8.3+cu130torch2.12-cp312-cp312-linux_x86_64.whl",
+		"flash_attn-2.8.3+cu130torch2.12-cp312-cp312-manylinux_2_28_x86_64.whl",
+	}
+	for _, name := range matches {
+		if !matchesPrebuiltFlashAttentionWheel(name, info) {
+			t.Fatalf("expected %q to match", name)
+		}
+	}
+
+	misses := []string{
+		"flash_attn-2.8.3+cu13torch2.12cxx11abiTRUE-cp312-cp312-linux_x86_64.whl",
+		"flash_attn-2.8.3+cu130torch2.11-cp312-cp312-linux_x86_64.whl",
+		"flash_attn-2.8.3+cu130torch2.12-cp313-cp313-linux_x86_64.whl",
+		"flash_attn_3-3.0.0+cu130torch2.12-abi3-abi3-linux_x86_64.whl",
+	}
+	for _, name := range misses {
+		if matchesPrebuiltFlashAttentionWheel(name, info) {
+			t.Fatalf("did not expect %q to match", name)
+		}
+	}
+}
