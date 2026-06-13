@@ -132,6 +132,7 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 	args := []string{
 		"-m", "accelerate.commands.launch",
 		"--num_processes=1",
+		"--num_machines=1",
 		"--mixed_precision=bf16",
 		"--dynamo_backend=no",
 		trainScript,
