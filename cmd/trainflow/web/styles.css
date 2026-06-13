@@ -319,6 +319,8 @@ textarea:focus {
   position: relative;
   margin: 0;
   overflow: hidden;
+  display: grid;
+  place-items: center;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #0e1115;
@@ -415,8 +417,9 @@ textarea:focus {
 .image-overlay {
   position: relative;
   width: min(980px, calc(100vw - 40px));
-  max-height: min(90vh, 760px);
+  height: min(90vh, 760px);
   display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   place-items: center;
   gap: 12px;
   padding: 18px;
@@ -427,8 +430,12 @@ textarea:focus {
 }
 
 .image-overlay img {
-  width: 100%;
-  max-height: calc(90vh - 120px);
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
   object-fit: contain;
   border-radius: 12px;
 }
