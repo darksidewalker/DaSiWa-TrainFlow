@@ -1,35 +1,35 @@
 # DaSiWa TrainFlow
 
-DaSiWa TrainFlow is a portable Go shell for training LoRA on the Anima model family. It wraps the existing Python/`sd-scripts` training stack with a modern embedded UI, clickable path pickers, resumable training, live preview refresh, and a compact hardware monitor for Linux and Windows.
+DaSiWa TrainFlow is a portable Go shell for training LoRAs on Anima and SDXL-family models such as Pony and Illustrious. It wraps the existing Python/`sd-scripts` training stack with a modern embedded UI, clickable path pickers, dataset prep tools, resumable training, live preview refresh, and a compact hardware monitor for Linux and Windows.
 
 ![TrainFlow preview](assets/DaSiWa-TrainFlow.webp)
 
-Repository: <https://github.com/darksidewalker/TrainFlow>
+Repository: <https://github.com/darksidewalker/DaSiWa-TrainFlow>
 
 ## Quick Download
 
 Linux with Git:
 
 ```bash
-git clone --depth 1 https://github.com/darksidewalker/TrainFlow.git && cd TrainFlow && chmod +x TrainFlow TrainFlow_Runtime_Tool && ./TrainFlow_Runtime_Tool
+git clone --depth 1 https://github.com/darksidewalker/DaSiWa-TrainFlow.git && cd DaSiWa-TrainFlow && chmod +x TrainFlow TrainFlow_Runtime_Tool && ./TrainFlow_Runtime_Tool
 ```
 
 Linux without Git:
 
 ```bash
-curl -L -o TrainFlow.zip https://github.com/darksidewalker/TrainFlow/archive/refs/heads/main.zip && unzip TrainFlow.zip && cd TrainFlow-main && chmod +x TrainFlow TrainFlow_Runtime_Tool && ./TrainFlow_Runtime_Tool
+curl -L -o TrainFlow.zip https://github.com/darksidewalker/DaSiWa-TrainFlow/archive/refs/heads/main.zip && unzip TrainFlow.zip && cd DaSiWa-TrainFlow-main && chmod +x TrainFlow TrainFlow_Runtime_Tool && ./TrainFlow_Runtime_Tool
 ```
 
 Windows PowerShell with Git:
 
 ```powershell
-git clone --depth 1 https://github.com/darksidewalker/TrainFlow.git; cd TrainFlow; .\TrainFlow_Runtime_Tool.exe
+git clone --depth 1 https://github.com/darksidewalker/DaSiWa-TrainFlow.git; cd DaSiWa-TrainFlow; .\TrainFlow_Runtime_Tool.exe
 ```
 
 Windows PowerShell without Git:
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/darksidewalker/TrainFlow/archive/refs/heads/main.zip -OutFile TrainFlow.zip; Expand-Archive TrainFlow.zip -Force; cd TrainFlow-main; .\TrainFlow_Runtime_Tool.exe
+Invoke-WebRequest -Uri https://github.com/darksidewalker/DaSiWa-TrainFlow/archive/refs/heads/main.zip -OutFile TrainFlow.zip; Expand-Archive TrainFlow.zip -Force; cd DaSiWa-TrainFlow-main; .\TrainFlow_Runtime_Tool.exe
 ```
 
 The runtime tool opens a local installer UI. Click **Verify Runtime** first if you downloaded a fully bundled build. Click **Update Runtime** for a fresh platform runtime, or **Install Requirements** if Python is already present but dependencies need repair.
@@ -123,10 +123,20 @@ dist/trainflow-runtime-tool-windows-amd64.exe
 
 1. Run the runtime tool and install/update dependencies.
 2. Run `TrainFlow` or `TrainFlow.exe`.
-3. Use the Browse buttons to select model files and dataset folders.
-4. Set trigger word, rank, optimizer, steps, and preview settings.
-5. Click **Start**.
-6. Click **Quit** in the top bar when you want to terminate the local TrainFlow server.
+3. Choose the training profile: **Anima** or **SDXL / Pony / Illustrious**.
+4. Use the Browse buttons to select model files and dataset folders.
+5. Set trigger word, rank, optimizer, steps, and preview settings, or click **Auto Calc** for a profile-aware starting point.
+6. Click **Start**.
+7. Click **Quit** in the top bar when you want to terminate the local TrainFlow server.
+
+## Training Profiles
+
+TrainFlow keeps separate profile logic for Anima and SDXL-family training:
+
+- **Anima** uses the DiT, Qwen3 text encoder, and VAE paths, `networks.lora_anima`, 64px bucket steps, and Anima metadata.
+- **SDXL / Pony / Illustrious** uses a checkpoint path, `networks.lora`, 32px bucket steps, SDXL token settings, and SDXL-style UNet/text-encoder learning-rate fields.
+
+**Auto Calc** reads the selected profile and dataset image count, then updates rank, learning rates, batch, gradient accumulation, training steps, save interval, and sample interval. It preserves the selected optimizer instead of switching the training path out from under you. Prodigy keeps Prodigy math (`learning_rate = 1.0`) and exports a constant scheduler; AdamW and AdamW8bit stay on the standard `1e-4` cosine path.
 
 ## Resume Training
 
@@ -153,7 +163,10 @@ python training/sd-scripts/tools/anima_lora_metadata.py path/to/lora.safetensors
 
 - Go binary with embedded HTML/CSS/JS UI
 - Linux and Windows support
+- Anima and SDXL/Pony/Illustrious training profiles
 - clickable local path selectors
+- profile-aware Auto Calc that preserves the selected optimizer
+- dataset resize, caption/tagging, and prep helpers
 - configurable Train UNet Only setting, enabled by default
 - live logs and preview gallery
 - compact hardware monitor under the sampler settings
