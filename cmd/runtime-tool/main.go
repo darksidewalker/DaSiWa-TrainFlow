@@ -57,15 +57,16 @@ func main() {
 			return
 		}
 		var body struct {
-			Action     string `json:"action"`
-			KeepBackup bool   `json:"keepBackup"`
+			Action                string `json:"action"`
+			KeepBackup            bool   `json:"keepBackup"`
+			InstallFlashAttention bool   `json:"installFlashAttention"`
 		}
 		defer r.Body.Close()
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		ok, msg := runState.start(body.Action, body.KeepBackup)
+		ok, msg := runState.start(body.Action, body.KeepBackup, body.InstallFlashAttention)
 		writeJSON(w, map[string]any{"ok": ok, "message": msg})
 	})
 	mux.HandleFunc("/api/app/quit", func(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +95,7 @@ func main() {
 	}
 }
 
-func (r *runner) start(action string, keepBackup bool) (bool, string) {
+func (r *runner) start(action string, keepBackup bool, installFlashAttention bool) (bool, string) {
 	r.mu.Lock()
 	if r.running {
 		r.mu.Unlock()
@@ -114,9 +115,9 @@ func (r *runner) start(action string, keepBackup bool) (bool, string) {
 		var err error
 		switch action {
 		case "install":
-			err = runtimeops.InstallRequirements(r.root, r.append)
+			err = runtimeops.InstallRequirements(r.root, installFlashAttention, r.append)
 		case "update":
-			err = runtimeops.UpdateRuntime(r.root, keepBackup, r.append)
+			err = runtimeops.UpdateRuntime(r.root, keepBackup, installFlashAttention, r.append)
 		case "verify":
 			err = runtimeops.Verify(r.root, r.append)
 		case "models":

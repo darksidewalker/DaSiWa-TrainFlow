@@ -30,8 +30,12 @@
       <input id="keepBackup" type="checkbox">
       <span>Keep backup before update</span>
     </label>
+    <label class="check-row">
+      <input id="installFlashAttention" type="checkbox">
+      <span>Install Flash Attention (optional, may build from source)</span>
+    </label>
     <section class="note">
-      <p>Windows updates `python_embeded/windows` with the official Python 3.12 embeddable package. Linux creates `python_embeded/linux` as a local venv using `python3.12` or `python3` from PATH. Dependencies install with uv first and fall back to pip if needed. Backups are deleted after a successful update unless the checkbox is enabled.</p>
+      <p>Windows updates `python_embeded/windows` with the official Python 3.12 embeddable package. Linux creates `python_embeded/linux` as a local venv using `python3.12` or `python3` from PATH. Dependencies install with uv first and fall back to pip if needed. Backups are deleted after a successful update unless the checkbox is enabled. Flash Attention is skipped unless selected.</p>
     </section>
     <pre id="logs"></pre>
   </main>

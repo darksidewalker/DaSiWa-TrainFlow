@@ -23,7 +23,7 @@ const (
 	pythonTag     = "312"
 )
 
-func InstallRequirements(root string, log Logger) error {
+func InstallRequirements(root string, installFlashAttention bool, log Logger) error {
 	python, err := ensurePython(root, log)
 	if err != nil {
 		return err
@@ -33,10 +33,10 @@ func InstallRequirements(root string, log Logger) error {
 	if err := installer.install("--upgrade", "torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cu130"); err != nil {
 		return err
 	}
-	return installTrainerDeps(root, installer, log)
+	return installTrainerDeps(root, installer, installFlashAttention, log)
 }
 
-func UpdateRuntime(root string, keepBackup bool, log Logger) error {
+func UpdateRuntime(root string, keepBackup bool, installFlashAttention bool, log Logger) error {
 	if runtime.GOOS == "windows" {
 		if err := installWindowsEmbeddedPython(root, keepBackup, log); err != nil {
 			return err
@@ -46,7 +46,7 @@ func UpdateRuntime(root string, keepBackup bool, log Logger) error {
 			return err
 		}
 	}
-	return InstallRequirements(root, log)
+	return InstallRequirements(root, installFlashAttention, log)
 }
 
 func Verify(root string, log Logger) error {
@@ -76,7 +76,7 @@ func ensurePython(root string, log Logger) (string, error) {
 	return python, nil
 }
 
-func installTrainerDeps(root string, installer dependencyInstaller, log Logger) error {
+func installTrainerDeps(root string, installer dependencyInstaller, installFlashAttention bool, log Logger) error {
 	sdScriptsDir := filepath.Join(root, "training", "sd-scripts")
 	log("Upgrading pip, setuptools, and wheel...")
 	if err := installer.install("--upgrade", "pip", "setuptools", "wheel"); err != nil {
@@ -94,6 +94,10 @@ func installTrainerDeps(root string, installer dependencyInstaller, log Logger) 
 	log("Installing TrainFlow UI/prep dependencies...")
 	if err := installer.install("gradio", "psutil", "toml", "pillow", "onnxruntime-gpu", "pandas", "opencv-python"); err != nil {
 		return err
+	}
+	if !installFlashAttention {
+		log("Skipping optional Flash Attention install.")
+		return nil
 	}
 	installOptionalFlashAttention(installer, log)
 	return nil

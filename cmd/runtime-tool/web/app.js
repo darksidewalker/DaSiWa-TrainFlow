@@ -3,6 +3,7 @@ const statusText = document.getElementById("statusText");
 const modelStatus = document.getElementById("modelStatus");
 const osBadge = document.getElementById("osBadge");
 const keepBackup = document.getElementById("keepBackup");
+const installFlashAttention = document.getElementById("installFlashAttention");
 const buttons = {
   install: document.getElementById("installButton"),
   update: document.getElementById("updateButton"),
@@ -24,7 +25,11 @@ async function api(path, options = {}) {
 async function run(action) {
   const resp = await api("/api/run", {
     method: "POST",
-    body: JSON.stringify({ action, keepBackup: keepBackup.checked })
+    body: JSON.stringify({
+      action,
+      keepBackup: keepBackup.checked,
+      installFlashAttention: installFlashAttention.checked
+    })
   });
   statusText.textContent = resp.message;
 }
@@ -36,6 +41,7 @@ async function quitApp() {
     button.disabled = true;
   }
   keepBackup.disabled = true;
+  installFlashAttention.disabled = true;
 }
 
 function renderStatus(data) {
@@ -48,6 +54,7 @@ function renderStatus(data) {
   }
   buttons.quit.disabled = false;
   keepBackup.disabled = Boolean(data.running);
+  installFlashAttention.disabled = Boolean(data.running);
   statusText.textContent = data.running ? "Running" : "Ready";
   renderModelStatus(data.models);
 }
