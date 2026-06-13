@@ -11,7 +11,7 @@ import (
 func createSamplePrompts(projectName string, s Settings, outDir string) (string, error) {
 	trigger := strings.TrimSpace(s.TriggerWord)
 	prompt := strings.TrimSpace(strings.ReplaceAll(s.PositivePrompt, "\n", " "))
-	if trigger != "" && !strings.HasPrefix(prompt, trigger) {
+	if s.AutoTrigger && trigger != "" && !promptHasTrigger(prompt, trigger) {
 		if prompt == "" {
 			prompt = trigger
 		} else {
@@ -32,7 +32,7 @@ func createSamplePrompts(projectName string, s Settings, outDir string) (string,
 	return path, os.WriteFile(path, []byte(content), 0644)
 }
 
-func createDatasetTOML(projectName string, s Settings, baseRes, maxBucket int, outDir string) (string, error) {
+func createDatasetTOML(projectName string, s Settings, profile trainingProfile, baseRes, maxBucket int, outDir string) (string, error) {
 	numImages := countDatasetImages(s.DatasetPath)
 	if numImages == 0 {
 		numImages = 1
@@ -43,7 +43,7 @@ func createDatasetTOML(projectName string, s Settings, baseRes, maxBucket int, o
 		repeats = 1
 	}
 	prefix := ""
-	if strings.TrimSpace(s.TriggerWord) != "" {
+	if s.AutoTrigger && strings.TrimSpace(s.TriggerWord) != "" {
 		prefix = strings.TrimSpace(s.TriggerWord) + ", "
 	}
 
@@ -52,7 +52,7 @@ func createDatasetTOML(projectName string, s Settings, baseRes, maxBucket int, o
 	content.WriteString("enable_bucket = true\n")
 	content.WriteString("min_bucket_reso = 256\n")
 	content.WriteString(fmt.Sprintf("max_bucket_reso = %d\n", maxBucket))
-	content.WriteString("bucket_reso_steps = 64\n")
+	content.WriteString(fmt.Sprintf("bucket_reso_steps = %d\n", profile.BucketStep))
 	content.WriteString("bucket_no_upscale = true\n\n")
 	content.WriteString("[[datasets]]\n")
 	content.WriteString(fmt.Sprintf("resolution = %d\n\n", baseRes))
@@ -66,13 +66,15 @@ func createDatasetTOML(projectName string, s Settings, baseRes, maxBucket int, o
 		content.WriteString(fmt.Sprintf("caption_prefix = %s\n", tomlString(prefix)))
 	}
 	content.WriteString("keep_tokens = 1\n")
-	content.WriteString("caption_dropout_rate = 0.05\n")
+	if profile.Architecture == ArchitectureAnima {
+		content.WriteString("caption_dropout_rate = 0.05\n")
+	}
 
 	path := filepath.Join(outDir, projectName+"_dataset.toml")
 	return path, os.WriteFile(path, []byte(content.String()), 0644)
 }
 
-func createTrainingTOML(projectName string, s Settings, outputDir, promptPath, outDir string) (string, error) {
+func createTrainingTOML(projectName string, s Settings, profile trainingProfile, outputDir, promptPath, outDir string) (string, error) {
 	scheduler := "cosine"
 	optArgs := []string{"weight_decay=0.01"}
 	if s.Optimizer == "Prodigy" {
@@ -88,6 +90,17 @@ func createTrainingTOML(projectName string, s Settings, outputDir, promptPath, o
 	}
 
 	content := strings.Builder{}
+	if profile.Architecture == ArchitectureSDXL {
+		writeSDXLTrainingTOML(&content, projectName, s, outputDir, promptPath, scheduler, optArgs)
+	} else {
+		writeAnimaTrainingTOML(&content, projectName, s, outputDir, promptPath, scheduler, optArgs)
+	}
+
+	path := filepath.Join(outDir, projectName+"_training.toml")
+	return path, os.WriteFile(path, []byte(content.String()), 0644)
+}
+
+func writeAnimaTrainingTOML(content *strings.Builder, projectName string, s Settings, outputDir, promptPath, scheduler string, optArgs []string) {
 	content.WriteString(fmt.Sprintf("pretrained_model_name_or_path = %s\n", tomlString(filepath.ToSlash(absPath(s.DiTPath)))))
 	content.WriteString(fmt.Sprintf("qwen3 = %s\n", tomlString(filepath.ToSlash(absPath(s.QwenPath)))))
 	content.WriteString(fmt.Sprintf("vae = %s\n", tomlString(filepath.ToSlash(absPath(s.VAEPath)))))
@@ -143,9 +156,63 @@ func createTrainingTOML(projectName string, s Settings, outputDir, promptPath, o
 	content.WriteString("vae_chunk_size = 32\n")
 	content.WriteString("vae_disable_cache = true\n")
 	content.WriteString(fmt.Sprintf("seed = %d\n", s.TrainSeed))
+}
 
-	path := filepath.Join(outDir, projectName+"_training.toml")
-	return path, os.WriteFile(path, []byte(content.String()), 0644)
+func writeSDXLTrainingTOML(content *strings.Builder, projectName string, s Settings, outputDir, promptPath, scheduler string, optArgs []string) {
+	content.WriteString(fmt.Sprintf("pretrained_model_name_or_path = %s\n", tomlString(filepath.ToSlash(absPath(s.CheckpointPath)))))
+	if strings.TrimSpace(s.VAEPath) != "" && fileExists(s.VAEPath) {
+		content.WriteString(fmt.Sprintf("vae = %s\n", tomlString(filepath.ToSlash(absPath(s.VAEPath)))))
+	}
+	content.WriteString("network_module = \"networks.lora\"\n")
+	content.WriteString(fmt.Sprintf("network_dim = %d\n", s.NetworkRank))
+	content.WriteString(fmt.Sprintf("network_alpha = %d\n", s.NetworkRank))
+	content.WriteString(fmt.Sprintf("network_train_unet_only = %t\n", s.TrainUNetOnly))
+	content.WriteString("gradient_checkpointing = true\n")
+	content.WriteString("max_grad_norm = 1.0\n")
+	content.WriteString(fmt.Sprintf("learning_rate = %s\n", s.LearningRate))
+	content.WriteString(fmt.Sprintf("unet_lr = %s\n", nonEmpty(s.UNetLR, s.LearningRate)))
+	if !s.TrainUNetOnly {
+		content.WriteString(fmt.Sprintf("text_encoder_lr1 = %s\n", nonEmpty(s.TextEncoderLR1, "1e-5")))
+		content.WriteString(fmt.Sprintf("text_encoder_lr2 = %s\n", nonEmpty(s.TextEncoderLR2, "1e-5")))
+	}
+	content.WriteString(fmt.Sprintf("optimizer_type = %s\n", tomlString(s.Optimizer)))
+	content.WriteString("optimizer_args = [")
+	for i, arg := range optArgs {
+		if i > 0 {
+			content.WriteString(", ")
+		}
+		content.WriteString(tomlString(arg))
+	}
+	content.WriteString("]\n")
+	content.WriteString(fmt.Sprintf("lr_scheduler = %s\n", tomlString(scheduler)))
+	content.WriteString(fmt.Sprintf("max_train_steps = %d\n", s.TrainingSteps))
+	content.WriteString(fmt.Sprintf("train_batch_size = %d\n", s.TrainBatchSize))
+	content.WriteString(fmt.Sprintf("gradient_accumulation_steps = %d\n", s.GradientAccumulationSteps))
+	content.WriteString("mixed_precision = \"bf16\"\n")
+	content.WriteString(fmt.Sprintf("output_dir = %s\n", tomlString(filepath.ToSlash(absPath(outputDir)))))
+	content.WriteString(fmt.Sprintf("output_name = %s\n", tomlString(projectName)))
+	content.WriteString(fmt.Sprintf("save_every_n_steps = %d\n", s.SaveSteps))
+	content.WriteString(fmt.Sprintf("sample_every_n_steps = %d\n", s.SampleSteps))
+	content.WriteString(fmt.Sprintf("sample_prompts = %s\n", tomlString(filepath.ToSlash(absPath(promptPath)))))
+	content.WriteString("save_state = true\n")
+	content.WriteString("save_last_n_steps_state = 1\n")
+	content.WriteString("save_last_n_epochs_state = 1\n")
+	if resumePath := resolveResumePath(s, outputDir); resumePath != "" {
+		content.WriteString(fmt.Sprintf("resume = %s\n", tomlString(filepath.ToSlash(absPath(resumePath)))))
+	}
+	content.WriteString("sample_sampler = \"euler_a\"\n")
+	content.WriteString("cache_latents = true\n")
+	content.WriteString("cache_latents_to_disk = true\n")
+	if s.TrainUNetOnly {
+		content.WriteString("cache_text_encoder_outputs = true\n")
+		content.WriteString("cache_text_encoder_outputs_to_disk = true\n")
+	}
+	content.WriteString("sdpa = true\n")
+	content.WriteString("save_model_as = \"safetensors\"\n")
+	content.WriteString("save_precision = \"bf16\"\n")
+	content.WriteString("max_data_loader_n_workers = 4\n")
+	content.WriteString("max_token_length = 225\n")
+	content.WriteString(fmt.Sprintf("seed = %d\n", s.TrainSeed))
 }
 
 func resolveResumePath(s Settings, outputDir string) string {
@@ -177,6 +244,27 @@ func countDatasetImages(datasetPath string) int {
 
 func tomlString(value string) string {
 	return strconv.Quote(value)
+}
+
+func nonEmpty(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func promptHasTrigger(prompt, trigger string) bool {
+	prompt = strings.ToLower(strings.TrimSpace(prompt))
+	trigger = strings.ToLower(strings.TrimSpace(trigger))
+	if trigger == "" {
+		return true
+	}
+	for _, part := range strings.Split(prompt, ",") {
+		if strings.TrimSpace(part) == trigger {
+			return true
+		}
+	}
+	return prompt == trigger
 }
 
 func absPath(path string) string {

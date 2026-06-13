@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -53,7 +54,7 @@ func main() {
 	trainer.RegisterRoutes(mux, webFS, manager, hub, onQuit)
 
 	server = &http.Server{
-		Addr:              ":7860",
+		Addr:              serverAddr(),
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
@@ -69,11 +70,24 @@ func main() {
 
 	url := "http://127.0.0.1" + server.Addr
 	log.Printf("DaSiWa TrainFlow is running at %s", url)
-	go openBrowser(url)
+	if os.Getenv("TRAINFLOW_NO_BROWSER") != "1" {
+		go openBrowser(url)
+	}
 
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+func serverAddr() string {
+	addr := strings.TrimSpace(os.Getenv("TRAINFLOW_ADDR"))
+	if addr == "" {
+		return ":7860"
+	}
+	if strings.Contains(addr, ":") {
+		return addr
+	}
+	return ":" + addr
 }
 
 func detectRoot() (string, error) {

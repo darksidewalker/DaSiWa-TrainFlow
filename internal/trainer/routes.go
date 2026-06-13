@@ -44,6 +44,20 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 		writeJSON(w, manager.Status())
 	})
 
+	mux.HandleFunc("/api/settings/defaults", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var settings Settings
+		if err := decodeJSON(r, &settings); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		next, message := applyStableDefaults(settings)
+		writeJSON(w, AutoCalcResponse{OK: true, Message: message, Settings: next})
+	})
+
 	mux.HandleFunc("/api/runtime", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -57,7 +71,7 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		writeJSON(w, modelops.CheckWithOverrides(manager.root, modelOverrides(manager.Settings())))
+		writeJSON(w, modelStatusForSettings(manager.root, manager.Settings()))
 	})
 
 	mux.HandleFunc("/api/runtime/launch", func(w http.ResponseWriter, r *http.Request) {
@@ -151,15 +165,16 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if strings.TrimSpace(settings.TriggerWord) == "" {
-			writeJSON(w, StartResponse{OK: false, Message: "Set a trigger/project name first."})
+		settings = normalizeSettings(settings)
+		if projectNameForSettings(settings) == "untitled" {
+			writeJSON(w, StartResponse{OK: false, Message: "Set a project name first."})
 			return
 		}
 		if err := manager.SaveSettings(settings); err != nil {
 			writeJSON(w, StartResponse{OK: false, Message: err.Error()})
 			return
 		}
-		path := outputProject(manager.root, settings.TriggerWord)
+		path := outputProject(manager.root, settings)
 		if err := os.MkdirAll(path, 0755); err != nil {
 			writeJSON(w, StartResponse{OK: false, Message: err.Error()})
 			return
@@ -173,7 +188,7 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 
 	mux.HandleFunc("/api/images", func(w http.ResponseWriter, r *http.Request) {
 		settings := manager.Settings()
-		writeJSON(w, listLatestImages(filepath.Join(outputProject(manager.root, settings.TriggerWord), "sample")))
+		writeJSON(w, listLatestImages(filepath.Join(outputProject(manager.root, settings), "sample")))
 	})
 
 	mux.HandleFunc("/api/path/list", func(w http.ResponseWriter, r *http.Request) {
@@ -210,6 +225,56 @@ func modelOverrides(settings Settings) map[string]string {
 		"dit_path":  settings.DiTPath,
 		"qwen_path": settings.QwenPath,
 		"vae_path":  settings.VAEPath,
+	}
+}
+
+func modelStatusForSettings(root string, settings Settings) modelops.Status {
+	settings = normalizeSettings(settings)
+	profile := profileFor(settings)
+	if profile.supportsManagedModelCheck() {
+		return modelops.CheckWithOverrides(root, modelOverrides(settings))
+	}
+
+	files := []modelops.ModelFile{
+		{
+			Name:  "SDXL / Pony / Illustrious checkpoint",
+			Key:   "checkpoint_path",
+			Path:  settings.CheckpointPath,
+			Found: settings.CheckpointPath,
+			OK:    fileExists(settings.CheckpointPath),
+		},
+	}
+	files = append(files, modelops.OptionalFiles(root)...)
+	missing := 0
+	optionalMissing := 0
+	for i := range files {
+		if files[i].OK {
+			continue
+		}
+		if files[i].Optional {
+			if fileExists(files[i].Path) {
+				files[i].OK = true
+				files[i].Found = files[i].Path
+				continue
+			}
+			optionalMissing++
+		} else {
+			missing++
+		}
+	}
+	message := "Models ready"
+	if missing > 0 {
+		message = "Choose an SDXL, Pony, or Illustrious checkpoint."
+	} else if optionalMissing > 0 {
+		message = fmt.Sprintf("Optional prep models missing: %d", optionalMissing)
+	}
+	return modelops.Status{
+		Ready:           missing == 0,
+		OptionalReady:   optionalMissing == 0,
+		Missing:         missing,
+		OptionalMissing: optionalMissing,
+		Files:           files,
+		Message:         message,
 	}
 }
 

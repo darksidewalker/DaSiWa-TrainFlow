@@ -12,12 +12,19 @@ lib/
 python_embeded/
 
 # TrainFlow generated files
+*.safetensors
+*.ckpt
+*.pth
+*.onnx
+*-state/
 training/output/
+training/logs/
 training/settings.json
 models/*
 !models/.gitkeep
 
 # Distribution / packaging
+dist/
 dist/
 build/
 *.egg-info/
@@ -25,6 +32,7 @@ build/
 # Unit test / coverage reports
 .pytest_cache/
 .coverage
+*.log
 htmlcov/
 
 # Jupyter Notebook

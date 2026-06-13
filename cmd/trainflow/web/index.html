@@ -10,7 +10,13 @@
   <main class="shell">
     <header class="topbar">
       <div>
-        <h1>DaSiWa TrainFlow</h1>
+        <div class="brand-row">
+          <h1>DaSiWa TrainFlow</h1>
+          <div class="architecture-toggle" aria-label="Training architecture">
+            <button type="button" class="architecture-button" data-architecture="anima" title="Use the Anima trainer with DiT, Qwen3, and Anima LoRA settings.">Anima</button>
+            <button type="button" class="architecture-button" data-architecture="sdxl" title="Use SDXL LoRA training for SDXL, Pony, Illustrious, and compatible checkpoint bases.">SDXL</button>
+          </div>
+        </div>
         <div class="top-status">
           <p id="statusText">Idle</p>
           <span id="runtimeStatus" class="runtime-pill checking">Runtime checking</span>
@@ -32,10 +38,21 @@
     <section class="workspace">
       <aside class="left-rail">
         <section class="panel identity">
+          <input id="architecture" type="hidden">
           <label>
-            <span>Trigger / Project</span>
-            <input id="trigger_word" autocomplete="off" placeholder="unique_style">
+            <span>Project / LoRA Name</span>
+            <input id="project_name" autocomplete="off" placeholder="my_lora_name">
           </label>
+          <div class="trigger-row">
+            <label>
+              <span>Trigger Word</span>
+              <input id="trigger_word" autocomplete="off" placeholder="unique_style">
+            </label>
+            <label class="check-row trigger-toggle" title="When enabled, TrainFlow prefixes captions and sample prompts with the trigger. Turn this off if your .txt captions already contain the trigger.">
+              <input id="auto_trigger" type="checkbox">
+              <span>Add trigger</span>
+            </label>
+          </div>
           <label>
             <span>Dataset Path</span>
             <div class="path-row">
@@ -45,16 +62,23 @@
           </label>
         </section>
 
-        <section class="panel">
+        <section class="panel model-panel">
           <div class="panel-title">Model Paths</div>
-          <label>
+          <label class="profile-field profile-anima">
             <span>DiT</span>
             <div class="path-row">
               <input id="dit_path" autocomplete="off">
               <button class="browse-button" data-target="dit_path" data-mode="model" title="Choose DiT model">...</button>
             </div>
           </label>
-          <label>
+          <label class="profile-field profile-sdxl">
+            <span>SDXL Checkpoint</span>
+            <div class="path-row">
+              <input id="checkpoint_path" autocomplete="off" placeholder="/path/to/illustrious_or_pony.safetensors">
+              <button class="browse-button" data-target="checkpoint_path" data-mode="model" title="Choose SDXL, Pony, Illustrious, or compatible checkpoint">...</button>
+            </div>
+          </label>
+          <label class="profile-field profile-anima">
             <span>Qwen3</span>
             <div class="path-row">
               <input id="qwen_path" autocomplete="off">
@@ -62,7 +86,7 @@
             </div>
           </label>
           <label>
-            <span>VAE</span>
+            <span id="vaeLabel">VAE</span>
             <div class="path-row">
               <input id="vae_path" autocomplete="off">
               <button class="browse-button" data-target="vae_path" data-mode="model" title="Choose VAE model">...</button>
@@ -70,12 +94,17 @@
           </label>
         </section>
 
-        <section class="panel two-col">
+        <section class="panel">
+          <div class="panel-heading">
+            <div class="panel-title">Training</div>
+            <button id="autoCalcButton" class="mini-action" title="Calculate a reasonable starting point from dataset image count and the active Anima or SDXL profile. Keeps paths, project, trigger, prompts, and resume path.">Auto Calc</button>
+          </div>
+          <div class="training-grid">
           <label>
             <span>Rank</span>
             <input id="network_rank" type="number" min="1" step="1">
           </label>
-          <label>
+          <label class="span-2">
             <span>Optimizer</span>
             <select id="optimizer">
               <option>Prodigy</option>
@@ -86,6 +115,18 @@
           <label>
             <span>Learning Rate</span>
             <input id="learning_rate" autocomplete="off">
+          </label>
+          <label class="profile-field profile-sdxl">
+            <span>UNet LR</span>
+            <input id="unet_lr" autocomplete="off">
+          </label>
+          <label class="profile-field profile-sdxl">
+            <span>Text Enc 1 LR</span>
+            <input id="text_encoder_lr1" autocomplete="off">
+          </label>
+          <label class="profile-field profile-sdxl">
+            <span>Text Enc 2 LR</span>
+            <input id="text_encoder_lr2" autocomplete="off">
           </label>
           <label>
             <span>Batch</span>
@@ -107,38 +148,39 @@
             <span>Preview Every</span>
             <input id="sample_steps" type="number" min="1" step="1">
           </label>
+          </div>
         </section>
 
-        <section class="panel">
-          <div class="panel-title">Training Scope</div>
-          <label class="check-row">
-            <input id="train_unet_only" type="checkbox">
-            <span>Train UNet Only</span>
-          </label>
-          <label class="check-row">
-            <input id="flash_attention" type="checkbox">
-            <span>Flash Attention</span>
-          </label>
-          <div class="muted-line">Freeze text encoder. Recommended for most LoRA training.</div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-title">Resume</div>
-          <label class="check-row">
-            <input id="resume_enabled" type="checkbox">
-            <span>Resume training</span>
-          </label>
-          <label class="check-row">
-            <input id="auto_resume" type="checkbox">
-            <span>Use latest saved state</span>
-          </label>
-          <label>
-            <span>Resume State Path</span>
-            <div class="path-row">
-              <input id="resume_path" autocomplete="off" placeholder="output/project/*-state">
-              <button class="browse-button" data-target="resume_path" data-mode="directory" title="Choose saved state folder">...</button>
-            </div>
-          </label>
+        <section class="panel run-options">
+          <div class="control-group">
+            <div class="panel-title">Scope</div>
+            <label class="check-row" title="Freeze text encoder. Recommended for most LoRA training and required for SDXL text-encoder caching.">
+              <input id="train_unet_only" type="checkbox">
+              <span>UNet only</span>
+            </label>
+            <label class="check-row profile-field profile-anima" title="Use Flash Attention for Anima. SDXL uses SDPA by default.">
+              <input id="flash_attention" type="checkbox">
+              <span>Flash attention</span>
+            </label>
+          </div>
+          <div class="control-group">
+            <div class="panel-title">Resume</div>
+            <label class="check-row">
+              <input id="resume_enabled" type="checkbox">
+              <span>Resume</span>
+            </label>
+            <label class="check-row">
+              <input id="auto_resume" type="checkbox">
+              <span>Latest state</span>
+            </label>
+            <label class="resume-path">
+              <span>State Path</span>
+              <div class="path-row">
+                <input id="resume_path" autocomplete="off" placeholder="output/project/*-state">
+                <button class="browse-button" data-target="resume_path" data-mode="directory" title="Choose saved state folder">...</button>
+              </div>
+            </label>
+          </div>
         </section>
       </aside>
 
@@ -150,8 +192,8 @@
         <section class="tools-row">
           <div class="panel tool-panel">
             <div class="panel-title">Sample Prompt</div>
-            <textarea id="pos_prompt" rows="4" placeholder="positive prompt"></textarea>
-            <textarea id="neg_prompt" rows="3" placeholder="negative prompt"></textarea>
+            <textarea id="pos_prompt" rows="3" placeholder="positive prompt"></textarea>
+            <textarea id="neg_prompt" rows="2" placeholder="negative prompt"></textarea>
             <div class="four-col">
               <label>
                 <span>Width</span>

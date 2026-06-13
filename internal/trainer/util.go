@@ -29,12 +29,19 @@ func jsonContains(data []byte, key string) bool {
 	return bytes.Contains(data, quoted)
 }
 
-func sanitizeProjectName(trigger string) string {
-	name := strings.Trim(projectNameRe.ReplaceAllString(strings.TrimSpace(trigger), "_"), "_")
+func sanitizeProjectName(project string) string {
+	name := strings.Trim(projectNameRe.ReplaceAllString(strings.TrimSpace(project), "_"), "_")
 	if name == "" {
 		return "untitled"
 	}
 	return name
+}
+
+func projectNameForSettings(s Settings) string {
+	if strings.TrimSpace(s.ProjectName) != "" {
+		return sanitizeProjectName(s.ProjectName)
+	}
+	return sanitizeProjectName(s.TriggerWord)
 }
 
 func validImageExt(path string) bool {
@@ -46,9 +53,8 @@ func validImageExt(path string) bool {
 	}
 }
 
-func outputProject(root, trigger string) string {
-	project := sanitizeProjectName(trigger)
-	return filepath.Join(root, "training", "output", project)
+func outputProject(root string, s Settings) string {
+	return filepath.Join(root, "training", "output", projectNameForSettings(normalizeSettings(s)))
 }
 
 func listLatestImages(dir string) []ImageItem {
@@ -170,15 +176,9 @@ func sqrtInt(v int) int {
 
 func validateSettings(s Settings) []string {
 	var errs []string
-	if !fileExists(s.DiTPath) {
-		errs = append(errs, "DiT file not found: "+s.DiTPath)
-	}
-	if !fileExists(s.QwenPath) {
-		errs = append(errs, "Qwen3 file not found: "+s.QwenPath)
-	}
-	if !fileExists(s.VAEPath) {
-		errs = append(errs, "VAE file not found: "+s.VAEPath)
-	}
+	s = normalizeSettings(s)
+	profile := profileFor(s)
+	errs = append(errs, profile.validateModelPaths(s)...)
 	if !dirExists(s.DatasetPath) {
 		errs = append(errs, "Dataset path not found: "+s.DatasetPath)
 		return errs

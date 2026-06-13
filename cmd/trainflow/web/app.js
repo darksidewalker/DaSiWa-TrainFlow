@@ -1,11 +1,18 @@
 const fields = [
+  "architecture",
+  "project_name",
   "trigger_word",
   "dataset_path",
   "dit_path",
+  "checkpoint_path",
   "qwen_path",
   "vae_path",
   "network_rank",
   "learning_rate",
+  "unet_lr",
+  "text_encoder_lr1",
+  "text_encoder_lr2",
+  "auto_trigger",
   "optimizer",
   "training_steps",
   "save_steps",
@@ -59,6 +66,7 @@ const startButton = document.getElementById("startButton");
 const stopButton = document.getElementById("stopButton");
 const quitButton = document.getElementById("quitButton");
 const saveButton = document.getElementById("saveButton");
+const autoCalcButton = document.getElementById("autoCalcButton");
 const openOutputButton = document.getElementById("openOutputButton");
 const tagDatasetButton = document.getElementById("tagDatasetButton");
 const resizeDatasetButton = document.getElementById("resizeDatasetButton");
@@ -82,6 +90,9 @@ const pathGo = document.getElementById("pathGo");
 const pathCurrent = document.getElementById("pathCurrent");
 const pathRoots = document.getElementById("pathRoots");
 const pathEntries = document.getElementById("pathEntries");
+const architectureButtons = Array.from(document.querySelectorAll(".architecture-button"));
+const profileFields = Array.from(document.querySelectorAll(".profile-field"));
+const vaeLabel = document.getElementById("vaeLabel");
 
 let galleryImages = [];
 let overlayIndex = 0;
@@ -108,6 +119,7 @@ function collectSettings() {
       data[id] = el.value;
     }
   }
+  data.architecture = normalizeArchitecture(data.architecture);
   data.train_seed = 42;
   data.sample_steps_gen = 30;
   return data;
@@ -121,6 +133,44 @@ function applySettings(data) {
     } else {
       els[id].value = data[id];
     }
+  }
+  setArchitecture(data.architecture || "anima", false);
+}
+
+function normalizeArchitecture(value) {
+  return value === "sdxl" ? "sdxl" : "anima";
+}
+
+function setArchitecture(value, save = true) {
+  const architecture = normalizeArchitecture(value);
+  els.architecture.value = architecture;
+  document.body.dataset.architecture = architecture;
+  for (const button of architectureButtons) {
+    button.classList.toggle("active", button.dataset.architecture === architecture);
+    button.setAttribute("aria-pressed", String(button.dataset.architecture === architecture));
+  }
+  for (const field of profileFields) {
+    const visible = field.classList.contains(`profile-${architecture}`);
+    field.classList.toggle("hidden", !visible);
+  }
+  if (architecture === "sdxl") {
+    vaeLabel.textContent = "VAE (optional)";
+    if (save && (!els.optimizer.value || els.optimizer.value === "Prodigy")) els.optimizer.value = "AdamW8bit";
+  } else {
+    vaeLabel.textContent = "VAE";
+  }
+  normalizeOptimizerLearningRate();
+  if (save) {
+    queueSave();
+    refreshModelStatus();
+  }
+}
+
+function normalizeOptimizerLearningRate() {
+  if (els.optimizer.value === "Prodigy") {
+    els.learning_rate.value = "1.0";
+  } else if (!els.learning_rate.value || els.learning_rate.value === "1.0") {
+    els.learning_rate.value = "1e-4";
   }
 }
 
@@ -146,6 +196,24 @@ async function saveSettings() {
     setStatus(err.message, false);
   } finally {
     saveButton.disabled = false;
+  }
+}
+
+async function autoCalculateTraining() {
+  autoCalcButton.disabled = true;
+  try {
+    const resp = await api("/api/settings/defaults", {
+      method: "POST",
+      body: JSON.stringify(collectSettings())
+    });
+    applySettings(resp.settings);
+    setStatus(resp.message, resp.ok);
+    await saveSettings();
+    await refreshModelStatus();
+  } catch (err) {
+    setStatus(err.message, false);
+  } finally {
+    autoCalcButton.disabled = false;
   }
 }
 
@@ -206,9 +274,10 @@ async function quitApp() {
     setStatus(resp.message, resp.ok);
     startButton.disabled = true;
     stopButton.disabled = true;
-    saveButton.disabled = true;
-    openOutputButton.disabled = true;
-    quitButton.disabled = true;
+  saveButton.disabled = true;
+  openOutputButton.disabled = true;
+  autoCalcButton.disabled = true;
+  quitButton.disabled = true;
   } catch (err) {
     setStatus(err.message, false);
   }
@@ -319,6 +388,7 @@ function setStatus(text, ok = true) {
 function setRunning(value) {
   running = value;
   startButton.disabled = value;
+  autoCalcButton.disabled = value;
   tagDatasetButton.disabled = value;
   resizeDatasetButton.disabled = value;
   prepDatasetButton.disabled = value;
@@ -534,11 +604,24 @@ for (const field of Object.values(els)) {
   field.addEventListener("change", queueSave);
 }
 
+for (const button of architectureButtons) {
+  button.addEventListener("click", () => setArchitecture(button.dataset.architecture));
+}
+
+for (const id of ["dit_path", "checkpoint_path", "qwen_path", "vae_path"]) {
+  els[id].addEventListener("change", refreshModelStatus);
+}
+
+els.optimizer.addEventListener("change", () => {
+  normalizeOptimizerLearningRate();
+});
+
 for (const button of document.querySelectorAll(".browse-button")) {
   button.addEventListener("click", () => openPathPicker(button.dataset.target, button.dataset.mode));
 }
 
 saveButton.addEventListener("click", saveSettings);
+autoCalcButton.addEventListener("click", autoCalculateTraining);
 openOutputButton.addEventListener("click", openOutputFolder);
 startButton.addEventListener("click", startTraining);
 tagDatasetButton.addEventListener("click", () => runDatasetPrep("tag"));

@@ -6,13 +6,20 @@ import (
 )
 
 type Settings struct {
+	Architecture              string  `json:"architecture"`
+	ProjectName               string  `json:"project_name"`
 	TriggerWord               string  `json:"trigger_word"`
+	AutoTrigger               bool    `json:"auto_trigger"`
 	DatasetPath               string  `json:"dataset_path"`
 	DiTPath                   string  `json:"dit_path"`
+	CheckpointPath            string  `json:"checkpoint_path"`
 	QwenPath                  string  `json:"qwen_path"`
 	VAEPath                   string  `json:"vae_path"`
 	NetworkRank               int     `json:"network_rank"`
 	LearningRate              string  `json:"learning_rate"`
+	UNetLR                    string  `json:"unet_lr"`
+	TextEncoderLR1            string  `json:"text_encoder_lr1"`
+	TextEncoderLR2            string  `json:"text_encoder_lr2"`
 	Optimizer                 string  `json:"optimizer"`
 	TrainingSteps             int     `json:"training_steps"`
 	SaveSteps                 int     `json:"save_steps"`
@@ -42,17 +49,24 @@ type Settings struct {
 func DefaultSettings(root string) Settings {
 	home := defaultSettingsPath(root)
 	return Settings{
+		Architecture:              ArchitectureAnima,
+		ProjectName:               "",
 		TriggerWord:               "",
+		AutoTrigger:               true,
 		DatasetPath:               home,
 		DiTPath:                   home,
+		CheckpointPath:            home,
 		QwenPath:                  home,
 		VAEPath:                   home,
 		NetworkRank:               32,
-		LearningRate:              "1.0",
-		Optimizer:                 "Prodigy",
-		TrainingSteps:             2400,
-		SaveSteps:                 300,
-		SampleSteps:               300,
+		LearningRate:              "1e-4",
+		UNetLR:                    "1e-4",
+		TextEncoderLR1:            "1e-5",
+		TextEncoderLR2:            "1e-5",
+		Optimizer:                 "AdamW8bit",
+		TrainingSteps:             1100,
+		SaveSteps:                 100,
+		SampleSteps:               100,
 		PositivePrompt:            "",
 		NegativePrompt:            "worst quality, low quality, score_1, score_2, score_3, artist name",
 		Width:                     1024,
@@ -94,4 +108,10 @@ type StartResponse struct {
 	OK           bool   `json:"ok"`
 	Message      string `json:"message"`
 	PreparedPath string `json:"prepared_path,omitempty"`
+}
+
+type AutoCalcResponse struct {
+	OK       bool     `json:"ok"`
+	Message  string   `json:"message"`
+	Settings Settings `json:"settings"`
 }

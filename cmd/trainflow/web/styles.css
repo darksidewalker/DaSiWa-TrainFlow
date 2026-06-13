@@ -39,8 +39,8 @@ textarea {
 button {
   border: 1px solid transparent;
   border-radius: 8px;
-  min-height: 38px;
-  padding: 0 15px;
+  min-height: 34px;
+  padding: 0 12px;
   color: var(--text);
   cursor: pointer;
 }
@@ -52,8 +52,8 @@ button:disabled {
 
 .path-row {
   display: grid;
-  grid-template-columns: 1fr 42px;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: 5px;
 }
 
 .browse-button {
@@ -81,24 +81,56 @@ button:disabled {
 }
 
 .shell {
-  width: min(1820px, calc(100vw - 28px));
+  width: min(1880px, calc(100vw - 20px));
   margin: 0 auto;
-  padding: 16px 0 24px;
+  padding: 10px 0 18px;
 }
 
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  min-height: 72px;
+  gap: 12px;
+  min-height: 60px;
   border-bottom: 1px solid var(--line);
 }
 
 h1 {
   margin: 0;
-  font-size: clamp(24px, 3vw, 38px);
+  font-size: clamp(22px, 2.5vw, 32px);
   letter-spacing: 0;
+}
+
+.brand-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.architecture-toggle {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(17, 21, 26, 0.72);
+}
+
+.architecture-button {
+  min-height: 30px;
+  padding: 0 11px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.architecture-button.active {
+  border-color: rgba(45, 212, 191, 0.42);
+  background: rgba(45, 212, 191, 0.16);
+  color: var(--teal);
 }
 
 .topbar p {
@@ -156,16 +188,16 @@ h1 {
 
 .actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(300px, 390px) minmax(460px, 1fr) minmax(260px, 370px);
-  gap: 14px;
-  padding-top: 14px;
+  grid-template-columns: minmax(380px, 460px) minmax(500px, 1fr) minmax(240px, 330px);
+  gap: 10px;
+  padding-top: 10px;
 }
 
 .left-rail,
@@ -185,31 +217,57 @@ h1 {
 
 .panel,
 .preview-strip {
-  padding: 14px;
+  padding: 10px;
 }
 
 .panel + .panel {
-  margin-top: 12px;
+  margin-top: 8px;
+}
+
+.panel > label:last-child {
+  margin-bottom: 0;
 }
 
 .panel-title {
-  margin-bottom: 10px;
+  margin-bottom: 7px;
   color: #dfe6ee;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.panel-heading .panel-title {
+  margin-bottom: 0;
+}
+
+.mini-action {
+  min-height: 26px;
+  padding: 0 9px;
+  border-color: rgba(45, 212, 191, 0.36);
+  background: rgba(45, 212, 191, 0.12);
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 800;
+}
+
 label {
   display: grid;
-  gap: 6px;
-  margin-bottom: 10px;
+  gap: 4px;
+  margin-bottom: 7px;
 }
 
 label span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -217,12 +275,12 @@ input,
 select,
 textarea {
   width: 100%;
-  min-height: 38px;
+  min-height: 32px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #11151a;
   color: var(--text);
-  padding: 8px 10px;
+  padding: 6px 8px;
   outline: none;
 }
 
@@ -239,9 +297,11 @@ textarea:focus {
 }
 
 .two-col,
-.four-col {
+.four-col,
+.training-grid,
+.run-options {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .two-col {
@@ -252,6 +312,55 @@ textarea:focus {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.training-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.trigger-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.trigger-row label {
+  margin-bottom: 7px;
+}
+
+.trigger-toggle {
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #11151a;
+}
+
+.training-grid label {
+  margin-bottom: 0;
+}
+
+.span-2 {
+  grid-column: span 2;
+}
+
+.run-options {
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+  align-items: start;
+}
+
+.control-group {
+  min-width: 0;
+}
+
+.control-group .panel-title {
+  margin-bottom: 6px;
+}
+
+.resume-path {
+  margin-top: 7px;
+  margin-bottom: 0;
+}
+
 .log-panel {
   padding: 0;
   overflow: hidden;
@@ -259,15 +368,15 @@ textarea:focus {
 
 .log-panel .panel-title {
   margin: 0;
-  padding: 13px 14px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--line);
 }
 
 #logs {
-  height: 45vh;
-  min-height: 360px;
+  height: 50vh;
+  min-height: 330px;
   margin: 0;
-  padding: 14px;
+  padding: 12px;
   overflow: auto;
   color: #d7efe8;
   background: #0b0f12;
@@ -278,8 +387,8 @@ textarea:focus {
 .tools-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  margin-top: 14px;
+  gap: 10px;
+  margin-top: 10px;
 }
 
 .tool-panel {
@@ -289,33 +398,38 @@ textarea:focus {
 .check-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 4px 0 0;
+  gap: 6px;
+  margin: 0 0 6px;
 }
 
 .check-row input {
-  width: 18px;
-  min-height: 18px;
+  width: 16px;
+  min-height: 16px;
 }
 
 .prep-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 12px;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .prep-actions button {
-  min-height: 38px;
-  padding: 8px;
+  min-height: 34px;
+  padding: 6px;
   font-size: 12px;
 }
 
 .muted-line {
-  margin-top: 12px;
+  margin-top: 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.4;
+}
+
+.muted-line.compact {
+  margin-top: 2px;
+  margin-bottom: 8px;
 }
 
 .preview-strip {
@@ -669,7 +783,7 @@ textarea:focus {
 
 @media (max-width: 1180px) {
   .workspace {
-    grid-template-columns: 340px 1fr;
+    grid-template-columns: 360px 1fr;
   }
 
   .right-rail {
@@ -706,8 +820,17 @@ textarea:focus {
   }
 
   .four-col,
-  .two-col {
+  .two-col,
+  .training-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .run-options {
+    grid-template-columns: 1fr;
+  }
+
+  .span-2 {
+    grid-column: span 1;
   }
 
   #logs {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -59,7 +60,10 @@ func (m *Manager) LoadSettings() error {
 	if !jsonContains(data, "train_unet_only") {
 		settings.TrainUNetOnly = true
 	}
-	m.settings = settings
+	if !jsonContains(data, "auto_trigger") {
+		settings.AutoTrigger = true
+	}
+	m.settings = normalizeSettings(settings)
 	return nil
 }
 
@@ -70,6 +74,7 @@ func (m *Manager) Settings() Settings {
 }
 
 func (m *Manager) SaveSettings(s Settings) error {
+	s = normalizeSettings(s)
 	m.mu.Lock()
 	m.settings = s
 	m.mu.Unlock()
@@ -82,6 +87,7 @@ func (m *Manager) SaveSettings(s Settings) error {
 }
 
 func (m *Manager) Start(s Settings) (StartResponse, error) {
+	s = normalizeSettings(s)
 	if err := m.SaveSettings(s); err != nil {
 		return StartResponse{OK: false, Message: err.Error()}, err
 	}
@@ -99,7 +105,7 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 		return StartResponse{OK: false, Message: msg}, nil
 	}
 
-	projectName := sanitizeProjectName(s.TriggerWord)
+	projectName := projectNameForSettings(s)
 	projectOut := filepath.Join(m.root, "training", "output", projectName)
 	sampleDir := filepath.Join(projectOut, "sample")
 	configDir := filepath.Join(projectOut, "configs")
@@ -109,17 +115,18 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 		}
 	}
 
+	profile := profileFor(s)
 	baseRes, maxBucket := analyzeDatasetResolution(s.DatasetPath)
 	promptPath, err := createSamplePrompts(projectName, s, configDir)
 	if err != nil {
 		return StartResponse{OK: false, Message: err.Error()}, err
 	}
-	datasetTOML, err := createDatasetTOML(projectName, s, baseRes, maxBucket, configDir)
+	datasetTOML, err := createDatasetTOML(projectName, s, profile, baseRes, maxBucket, configDir)
 	if err != nil {
 		return StartResponse{OK: false, Message: err.Error()}, err
 	}
 	resumePath := resolveResumePath(s, projectOut)
-	trainingTOML, err := createTrainingTOML(projectName, s, projectOut, promptPath, configDir)
+	trainingTOML, err := createTrainingTOML(projectName, s, profile, projectOut, promptPath, configDir)
 	if err != nil {
 		return StartResponse{OK: false, Message: err.Error()}, err
 	}
@@ -128,13 +135,13 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 	if err := validatePythonRuntime(python); err != nil {
 		return StartResponse{OK: false, Message: err.Error()}, err
 	}
-	if s.FlashAttention {
+	if profile.Architecture == ArchitectureAnima && s.FlashAttention {
 		if err := validateFlashAttentionRuntime(python); err != nil {
 			return StartResponse{OK: false, Message: err.Error()}, err
 		}
 	}
 	trainDir := filepath.Join(m.root, "training", "sd-scripts")
-	trainScript := filepath.Join(trainDir, "anima_train_network.py")
+	trainScript := profile.trainingScript(m.root)
 	args := []string{
 		"-m", "accelerate.commands.launch",
 		"--num_processes=1",
@@ -162,11 +169,11 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 	m.mu.Lock()
 	m.trainingCmd = cmd
 	m.running = true
-	m.activeGPUs = map[string]string{"0": "training"}
+	m.activeGPUs = map[string]string{"0": profile.Label + " training"}
 	m.logLines = nil
 	m.mu.Unlock()
-	m.appendLog(fmt.Sprintf("Preparing %s...", projectName))
-	m.appendLog(fmt.Sprintf("Auto-resolution: base %dpx, max bucket %dpx", baseRes, maxBucket))
+	m.appendLog(fmt.Sprintf("Preparing %s (%s)...", projectName, profile.Label))
+	m.appendLog(fmt.Sprintf("Auto-resolution: base %dpx, max bucket %dpx, bucket step %dpx", baseRes, maxBucket, profile.BucketStep))
 	if s.ResumeEnabled {
 		if resumePath == "" {
 			m.appendLog("Resume enabled, but no saved state was found. Starting fresh.")
@@ -308,7 +315,7 @@ func (m *Manager) Status() map[string]any {
 	return map[string]any{
 		"running": m.running,
 		"logs":    strings.Join(m.logLines, "\n"),
-		"images":  listLatestImages(filepath.Join(outputProject(m.root, m.settings.TriggerWord), "sample")),
+		"images":  listLatestImages(filepath.Join(outputProject(m.root, m.settings), "sample")),
 	}
 }
 
@@ -430,6 +437,7 @@ func datasetTagArgs(root string, s Settings) []string {
 }
 
 func datasetResizeArgs(root string, s Settings) []string {
+	profile := profileFor(normalizeSettings(s))
 	maxSide := s.SideMax
 	if maxSide <= 0 {
 		maxSide = 768
@@ -440,13 +448,13 @@ func datasetResizeArgs(root string, s Settings) []string {
 		filepath.ToSlash(absPath(s.DatasetPath)),
 		filepath.ToSlash(absPath(preparedDatasetPath(root, s))),
 		"--max_resolution", resolution,
-		"--divisible_by", "64",
+		"--divisible_by", strconv.Itoa(profile.ResizeDivisor),
 		"--copy_associated_files",
 	}
 }
 
 func preparedDatasetPath(root string, s Settings) string {
-	name := sanitizeProjectName(s.TriggerWord)
+	name := projectNameForSettings(s)
 	if name == "untitled" {
 		name = sanitizeProjectName(filepath.Base(strings.TrimRight(s.DatasetPath, string(os.PathSeparator))))
 	}
