@@ -3,6 +3,7 @@ package trainer
 import (
 	"fmt"
 	"math"
+	"strings"
 )
 
 type profileDefaults struct {
@@ -49,6 +50,7 @@ func defaultsForProfile(profile trainingProfile) profileDefaults {
 
 func applyStableDefaults(s Settings) (Settings, string) {
 	s = normalizeSettings(s)
+	requestedOptimizer := strings.TrimSpace(s.Optimizer)
 	profile := profileFor(s)
 	defaults := defaultsForProfile(profile)
 	imageCount := countDatasetImages(s.DatasetPath)
@@ -62,10 +64,14 @@ func applyStableDefaults(s Settings) (Settings, string) {
 	s.TextEncoderLR1 = defaults.TextEncoderLR1
 	s.TextEncoderLR2 = defaults.TextEncoderLR2
 	s.Optimizer = defaults.Optimizer
+	if requestedOptimizer != "" {
+		s.Optimizer = requestedOptimizer
+	}
 	s.TrainBatchSize = 1
 	s.GradientAccumulationSteps = recommendedGradAccum(imageCount)
 	s.TrainUNetOnly = true
 	s.FlashAttention = false
+	s = normalizeSettings(s)
 
 	effectiveBatch := s.TrainBatchSize * s.GradientAccumulationSteps
 	steps := int(math.Ceil(float64(imageCount*defaults.TargetRepeats) / float64(effectiveBatch)))

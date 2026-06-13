@@ -81,6 +81,35 @@ func TestApplyStableDefaultsSDXLTypicalDataset(t *testing.T) {
 	}
 }
 
+func TestApplyStableDefaultsPreservesProdigySchedulerMath(t *testing.T) {
+	dir := testImageDataset(t, 60)
+	settings := DefaultSettings(dir)
+	settings.DatasetPath = dir
+	settings.Optimizer = "Prodigy"
+	settings.LearningRate = "1e-4"
+
+	next, _ := applyStableDefaults(settings)
+	if next.Optimizer != "Prodigy" {
+		t.Fatalf("expected Auto Calc to preserve optimizer, got %q", next.Optimizer)
+	}
+	if next.LearningRate != "1.0" {
+		t.Fatalf("expected Prodigy learning rate math, got %q", next.LearningRate)
+	}
+
+	profile := profileFor(next)
+	path, err := createTrainingTOML("prodigy", next, profile, dir, filepath.Join(dir, "prompts.txt"), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "lr_scheduler = \"constant\"") {
+		t.Fatalf("expected Prodigy scheduler to remain constant, got:\n%s", data)
+	}
+}
+
 func TestApplyStableDefaultsLargeDatasetUsesGradAccum(t *testing.T) {
 	dir := testImageDataset(t, 90)
 	settings := DefaultSettings(dir)
