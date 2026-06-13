@@ -25,6 +25,7 @@ The tool:
 - falls back to `python -m pip install` if uv bootstrap or uv install fails
 - installs PyTorch/torchvision/torchaudio from `https://download.pytorch.org/whl/cu130`
 - reinstalls `training/sd-scripts` requirements and the editable sd-scripts package
+- installs Flash Attention from a prebuilt wheel only when selected; source builds are skipped by default because they can consume extreme RAM and swap
 - prints Python, Torch, CUDA, and CUDA availability at the end
 
 Python 3.12.10 is used intentionally: Python.org says Python 3.12.10 was the last 3.12 release with Windows binary installers/embeddable packages. Newer 3.12 security releases are source-only.
@@ -46,6 +47,8 @@ There is no official Python "embeddable package" equivalent for Linux. The click
 Then click **Update Runtime** or **Install Requirements**.
 
 Dependency installation also uses uv first on Linux. Everything still targets the local `python_embeded/linux` interpreter, so packages are installed into the app runtime rather than your system Python.
+
+Flash Attention is optional. The runtime tool first asks pip/uv for a compatible prebuilt `flash-attn` wheel. If none exists for the current Python, Torch, CUDA, and platform combination, it skips installation instead of compiling locally. A source build can be forced with `DASIWA_FLASH_ATTN_SOURCE_BUILD=1`, but this is intentionally opt-in because flash-attn compilation can consume very large amounts of RAM and swap.
 
 The Go launcher checks these paths first:
 

@@ -112,7 +112,11 @@ func installOptionalFlashAttention(installer dependencyInstaller, log Logger) {
 	if err := installer.install("--only-binary=:all:", "flash-attn"); err == nil {
 		return
 	} else {
-		log("No compatible prebuilt flash-attn wheel was found; trying optimized source build: " + err.Error())
+		log("No compatible prebuilt flash-attn wheel was found: " + err.Error())
+	}
+	if os.Getenv("DASIWA_FLASH_ATTN_SOURCE_BUILD") != "1" {
+		log("Skipping flash-attn source build because it can require extreme RAM/swap. Set DASIWA_FLASH_ATTN_SOURCE_BUILD=1 to opt in manually.")
+		return
 	}
 	log("Installing Flash Attention build helpers...")
 	if err := installer.install("ninja", "packaging"); err != nil {
@@ -136,8 +140,8 @@ func flashAttentionBuildJobs() string {
 	if cpus < 1 {
 		cpus = 1
 	}
-	if cpus > 8 {
-		cpus = 8
+	if cpus > 2 {
+		cpus = 2
 	}
 	return fmt.Sprintf("%d", cpus)
 }
