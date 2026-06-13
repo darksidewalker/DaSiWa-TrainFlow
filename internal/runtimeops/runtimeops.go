@@ -105,9 +105,37 @@ func installOptionalFlashAttention(installer dependencyInstaller, log Logger) {
 		return
 	}
 	log("Installing optional Flash Attention support...")
-	if err := installer.install("--no-build-isolation", "flash-attn"); err != nil {
-		log("Optional flash-attn install failed; Flash Attention checkbox will require a manual compatible install: " + err.Error())
+	if err := installer.install("--only-binary=:all:", "flash-attn"); err == nil {
+		return
+	} else {
+		log("No compatible prebuilt flash-attn wheel was found; trying optimized source build: " + err.Error())
 	}
+	log("Installing Flash Attention build helpers...")
+	if err := installer.install("ninja", "packaging"); err != nil {
+		log("Flash Attention build helper install failed; skipping source build: " + err.Error())
+		return
+	}
+	jobs := flashAttentionBuildJobs()
+	env := []string{
+		"MAX_JOBS=" + jobs,
+		"NVCC_THREADS=" + jobs,
+		"FLASH_ATTENTION_FORCE_BUILD=TRUE",
+	}
+	log("Building Flash Attention from source with MAX_JOBS=" + jobs + "...")
+	if err := installer.installWithEnv(env, "--no-build-isolation", "flash-attn"); err != nil {
+		log("Optional flash-attn source build failed; Flash Attention checkbox will require a manual compatible install: " + err.Error())
+	}
+}
+
+func flashAttentionBuildJobs() string {
+	cpus := runtime.NumCPU()
+	if cpus < 1 {
+		cpus = 1
+	}
+	if cpus > 8 {
+		cpus = 8
+	}
+	return fmt.Sprintf("%d", cpus)
 }
 
 type dependencyInstaller struct {
@@ -141,16 +169,24 @@ func (d dependencyInstaller) install(args ...string) error {
 }
 
 func (d dependencyInstaller) installIn(workDir string, args ...string) error {
+	return d.installInWithEnv(workDir, nil, args...)
+}
+
+func (d dependencyInstaller) installWithEnv(env []string, args ...string) error {
+	return d.installInWithEnv(d.root, env, args...)
+}
+
+func (d dependencyInstaller) installInWithEnv(workDir string, env []string, args ...string) error {
 	if d.uv != "" {
 		uvArgs := append([]string{"pip", "install", "--python", d.python}, args...)
-		if err := run(d.log, workDir, d.uv, uvArgs...); err == nil {
+		if err := runWithEnv(d.log, workDir, env, d.uv, uvArgs...); err == nil {
 			return nil
 		} else {
 			d.log("uv install failed; retrying with pip: " + err.Error())
 		}
 	}
 	pipArgs := append([]string{"-m", "pip", "install"}, args...)
-	return run(d.log, workDir, d.python, pipArgs...)
+	return runWithEnv(d.log, workDir, env, d.python, pipArgs...)
 }
 
 func installWindowsEmbeddedPython(root string, keepBackup bool, log Logger) error {
@@ -400,10 +436,21 @@ func enableSitePackages(path string) error {
 }
 
 func run(log Logger, workDir, name string, args ...string) error {
-	log("$ " + name + " " + strings.Join(args, " "))
+	return runWithEnv(log, workDir, nil, name, args...)
+}
+
+func runWithEnv(log Logger, workDir string, env []string, name string, args ...string) error {
+	prefix := ""
+	if len(env) > 0 {
+		prefix = strings.Join(env, " ") + " "
+	}
+	log("$ " + prefix + name + " " + strings.Join(args, " "))
 	ctx := context.Background()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = workDir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
