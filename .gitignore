@@ -14,6 +14,8 @@ python_embeded/
 # TrainFlow generated files
 training/output/
 training/settings.json
+models/*
+!models/.gitkeep
 
 # Distribution / packaging
 dist/
