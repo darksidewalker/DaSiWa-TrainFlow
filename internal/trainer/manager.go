@@ -231,8 +231,21 @@ func (m *Manager) Status() map[string]any {
 }
 
 func (m *Manager) appendLog(line string) {
+	m.appendLogLine(line, false)
+}
+
+func (m *Manager) appendTrainingLog(line string) {
+	m.appendLogLine(line, isProgressLog(line))
+}
+
+func (m *Manager) appendLogLine(line string, replaceProgress bool) {
 	m.mu.Lock()
-	m.logLines = append(m.logLines, line)
+	last := len(m.logLines) - 1
+	if replaceProgress && last >= 0 && isProgressLog(m.logLines[last]) {
+		m.logLines[last] = line
+	} else {
+		m.logLines = append(m.logLines, line)
+	}
 	if len(m.logLines) > maxLogLines {
 		m.logLines = m.logLines[len(m.logLines)-maxLogLines:]
 	}
@@ -244,15 +257,16 @@ func (m *Manager) appendLog(line string) {
 
 func (m *Manager) pipeLogs(reader io.Reader, sampleDir string) {
 	scanner := bufio.NewScanner(reader)
+	scanner.Split(scanLogChunk)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(strings.ReplaceAll(scanner.Text(), "\r", ""))
 		if line == "" || isBlacklistedLog(line) {
 			continue
 		}
-		m.appendLog(line)
+		m.appendTrainingLog(line)
 		lower := strings.ToLower(line)
-		if strings.Contains(lower, "saved") || strings.Contains(lower, "sample") || strings.Contains(lower, "it/s") {
+		if strings.Contains(lower, "saved") || strings.Contains(lower, "sample") {
 			m.hub.BroadcastJSON("images", listLatestImages(sampleDir))
 		}
 	}
@@ -289,6 +303,27 @@ func trainingEnv(trainDir string) []string {
 	env = append(env, "CUDA_VISIBLE_DEVICES=0")
 	env = append(env, "ACCELERATE_USE_CPU=False")
 	return env
+}
+
+func scanLogChunk(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	for i, b := range data {
+		if b == '\n' || b == '\r' {
+			advance = i + 1
+			if b == '\r' && len(data) > i+1 && data[i+1] == '\n' {
+				advance++
+			}
+			return advance, data[:i], nil
+		}
+	}
+	if atEOF && len(data) > 0 {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
+}
+
+func isProgressLog(line string) bool {
+	lower := strings.ToLower(line)
+	return strings.Contains(line, "%|") && (strings.Contains(lower, "it/s") || strings.Contains(lower, "/it") || strings.Contains(lower, "steps:"))
 }
 
 func isBlacklistedLog(line string) bool {
