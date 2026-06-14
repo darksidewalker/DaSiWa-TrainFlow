@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"trainflow/internal/modelops"
+	"trainflow/internal/process"
 )
 
 func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *Hub, onQuit func()) {
@@ -335,7 +336,7 @@ func openRuntimeTool(root string) error {
 	}
 	cmd := exec.Command(path)
 	cmd.Dir = root
-	if err := cmd.Start(); err != nil {
+	if err := process.StartDetached(cmd); err != nil {
 		return err
 	}
 	return openURL("http://127.0.0.1:7870")
@@ -359,7 +360,7 @@ func openURL(path string) error {
 	default:
 		cmd = exec.Command("xdg-open", path)
 	}
-	return cmd.Start()
+	return process.StartDetached(cmd)
 }
 
 func writeJSON(w http.ResponseWriter, value any) {

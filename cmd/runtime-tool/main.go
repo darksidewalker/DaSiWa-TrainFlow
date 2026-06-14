@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"trainflow/internal/modelops"
+	"trainflow/internal/process"
 	"trainflow/internal/runtimeops"
 	"trainflow/internal/trainer"
 )
@@ -222,7 +223,7 @@ func openBrowser(url string) {
 	default:
 		cmd = exec.Command("xdg-open", url)
 	}
-	_ = cmd.Start()
+	_ = process.StartDetached(cmd)
 }
 
 func writeJSON(w http.ResponseWriter, value any) {

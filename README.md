@@ -161,19 +161,56 @@ python training/sd-scripts/tools/anima_lora_metadata.py path/to/lora.safetensors
 
 ## Features
 
-- Go binary with embedded HTML/CSS/JS UI
-- Linux and Windows support
-- Anima and SDXL/Pony/Illustrious training profiles
-- clickable local path selectors
-- profile-aware Auto Calc that preserves the selected optimizer
-- dataset resize, caption/tagging, and prep helpers
-- configurable Train UNet Only setting, enabled by default
-- live logs and preview gallery
-- compact hardware monitor under the sampler settings
-- CPU, RAM, CPU temperature where available, and NVIDIA GPU stats
-- resumable training from saved state folders
-- runtime installer/updater with uv-first dependency installation
-- portable Python runtime folders at `python_embeded/windows` and `python_embeded/linux`
+### Embedded Training GUI
+
+- Single portable Go app with embedded HTML/CSS/JS; no separate web build step is needed.
+- Local browser UI at `http://127.0.0.1:7860`, with Linux and Windows binaries.
+- Profile switcher for **Anima** and **SDXL / Pony / Illustrious** training.
+- Profile-aware model path fields:
+  - Anima: DiT, Qwen3 text encoder, and VAE.
+  - SDXL: checkpoint plus optional VAE.
+- Clickable local path browser for datasets, model files, and resume-state folders.
+- Autosaved settings in `training/settings.json`, plus a manual **Save** button.
+- **Auto Calc** for a profile-aware starting point from dataset image count. It preserves paths, project name, trigger word, prompts, resume path, and the selected optimizer.
+- Optimizer-aware defaults for Prodigy, AdamW8bit, and AdamW.
+- Training controls for rank, learning rates, batch size, steps, gradient accumulation, save interval, and preview interval.
+- SDXL-specific UNet/text-encoder learning-rate fields.
+- **UNet only** training toggle, enabled by default.
+- Optional Anima Flash Attention toggle when a compatible runtime dependency is installed.
+- Resume panel for saved `sd-scripts` state folders, including automatic latest-state discovery.
+- Positive/negative sample prompt editor with width, height, CFG, and seed controls.
+- Live training log streamed from the running process.
+- Preview gallery for generated samples, with an image overlay for browsing outputs.
+- **Output** button that opens or creates the current project output folder.
+- **Start**, **Stop**, and **Quit** controls for the local training server and child process.
+
+### Dataset Prep GUI
+
+- WD EVA02 ONNX caption/tagging button.
+- Resize-copy helper that writes prepared datasets under `training/prepared/<project>`.
+- Combined **Tag + Resize** workflow.
+- Configurable resize min/max side, general tag threshold, character tag threshold, and caption overwrite behavior.
+- Optional prep-model status checks in the app top bar.
+
+### Runtime And Model Tooling
+
+- Companion `TrainFlow_Runtime_Tool` UI at `http://127.0.0.1:7870`.
+- **Verify Runtime**, **Update Runtime**, and **Install Requirements** actions.
+- **Download Models** for managed Anima base model files.
+- **Download Prep** for optional WD EVA02 tagger and U2Net prep assets.
+- Runtime/model status pills in the main UI, with launch buttons when setup is missing.
+- Platform-specific portable Python layout:
+  - Windows: `python_embeded/windows`
+  - Linux: `python_embeded/linux`
+- uv-first dependency installation with pip fallback.
+- Optional Flash Attention wheel install path on Linux, guarded to avoid accidental heavy source builds.
+
+### Monitoring
+
+- Compact hardware overlay inside the sampler panel.
+- CPU and RAM usage.
+- CPU temperature where the host exposes it.
+- NVIDIA GPU utilization, memory, temperature, and active TrainFlow task labels when `nvidia-smi` is available.
 
 ## Required Models
 
@@ -200,13 +237,24 @@ git clone https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3 models/wd-
 curl -L -o models/u2net/u2net.onnx https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx
 ```
 
-## Requirements
+## Dependencies
 
-- Go 1.22+ if building from source
-- Python 3.12 recommended for Linux runtime creation
+For normal use, run `TrainFlow_Runtime_Tool` and let it create or repair the local runtime. The tool installs:
+
+- PyTorch, TorchVision, and TorchAudio CUDA 13.0 wheels from `https://download.pytorch.org/whl/cu130`
+- the bundled `training/sd-scripts/requirements.txt`
+- the bundled `sd-scripts` package in editable mode
+- TrainFlow helper packages: `gradio`, `psutil`, `toml`, `pillow`, `onnx`, `onnxruntime-gpu`, `pandas`, and `opencv-python`
+- `uv` for faster installs, with `python -m pip` as a fallback
+- optional `flash-attn` support when explicitly selected and a compatible prebuilt wheel is available
+
+Host requirements:
+
+- Git for clone-based installs
+- Python 3.12 recommended on Linux so the runtime tool can create `python_embeded/linux`
 - NVIDIA GPU recommended for training
 - `nvidia-smi` for GPU overlay stats
-- Git for clone-based install
+- Go 1.22+ only when building the Go binaries from source
 
 ## Credits
 

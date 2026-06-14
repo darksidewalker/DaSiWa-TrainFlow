@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"trainflow/internal/hwmon"
+	"trainflow/internal/process"
 	"trainflow/internal/trainer"
 )
 
@@ -131,5 +132,5 @@ func openBrowser(url string) {
 	default:
 		cmd = exec.Command("xdg-open", url)
 	}
-	_ = cmd.Start()
+	_ = process.StartDetached(cmd)
 }

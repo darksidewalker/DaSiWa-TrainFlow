@@ -10,6 +10,14 @@ import (
 func Prepare(cmd *exec.Cmd) {
 }
 
+func StartDetached(cmd *exec.Cmd) error {
+	Prepare(cmd)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return cmd.Process.Release()
+}
+
 func Terminate(cmd *exec.Cmd) error {
 	if cmd == nil || cmd.Process == nil {
 		return nil
