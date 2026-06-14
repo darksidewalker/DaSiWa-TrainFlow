@@ -34,6 +34,7 @@ type Settings struct {
 	TrainSeed                 int     `json:"train_seed"`
 	TrainBatchSize            int     `json:"train_batch_size"`
 	GradientAccumulationSteps int     `json:"gradient_accumulation_steps"`
+	TargetVRAMPercent         int     `json:"target_vram_percent"`
 	TrainUNetOnly             bool    `json:"train_unet_only"`
 	FlashAttention            bool    `json:"flash_attention"`
 	ResumeEnabled             bool    `json:"resume_enabled"`
@@ -77,6 +78,7 @@ func DefaultSettings(root string) Settings {
 		TrainSeed:                 42,
 		TrainBatchSize:            1,
 		GradientAccumulationSteps: 1,
+		TargetVRAMPercent:         90,
 		TrainUNetOnly:             true,
 		FlashAttention:            false,
 		ResumeEnabled:             false,

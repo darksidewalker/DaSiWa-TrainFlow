@@ -125,6 +125,54 @@ func TestApplyStableDefaultsLargeDatasetUsesGradAccum(t *testing.T) {
 	}
 }
 
+func TestApplyStableDefaultsUsesVRAMTargetForBatch(t *testing.T) {
+	dir := testImageDataset(t, 60)
+	settings := DefaultSettings(dir)
+	settings.Architecture = ArchitectureSDXL
+	settings.DatasetPath = dir
+	settings.TargetVRAMPercent = 90
+
+	next, message := applyStableDefaultsWithVRAM(settings, 24576)
+	if next.TrainBatchSize != 2 {
+		t.Fatalf("expected 24 GB SDXL target to raise batch to 2, got %d (%s)", next.TrainBatchSize, message)
+	}
+	if next.TrainingSteps != 1200 {
+		t.Fatalf("expected SDXL min steps after larger batch, got %d", next.TrainingSteps)
+	}
+	if !strings.Contains(message, "VRAM target: 90% of 24576 MB") {
+		t.Fatalf("expected VRAM target in message, got %q", message)
+	}
+}
+
+func TestApplyStableDefaultsLowerVRAMTargetKeepsSaferBatch(t *testing.T) {
+	dir := testImageDataset(t, 60)
+	settings := DefaultSettings(dir)
+	settings.Architecture = ArchitectureSDXL
+	settings.DatasetPath = dir
+	settings.TargetVRAMPercent = 70
+
+	next, _ := applyStableDefaultsWithVRAM(settings, 24576)
+	if next.TrainBatchSize != 1 {
+		t.Fatalf("expected lower VRAM target to keep batch 1, got %d", next.TrainBatchSize)
+	}
+}
+
+func TestNormalizeSettingsDefaultsAndClampsTargetVRAM(t *testing.T) {
+	settings := DefaultSettings(t.TempDir())
+	settings.TargetVRAMPercent = 0
+	if got := normalizeSettings(settings).TargetVRAMPercent; got != 90 {
+		t.Fatalf("default target VRAM = %d, want 90", got)
+	}
+	settings.TargetVRAMPercent = 120
+	if got := normalizeSettings(settings).TargetVRAMPercent; got != 98 {
+		t.Fatalf("high target VRAM clamp = %d, want 98", got)
+	}
+	settings.TargetVRAMPercent = 10
+	if got := normalizeSettings(settings).TargetVRAMPercent; got != 50 {
+		t.Fatalf("low target VRAM clamp = %d, want 50", got)
+	}
+}
+
 func testImageDataset(t *testing.T, count int) string {
 	t.Helper()
 	dir := t.TempDir()

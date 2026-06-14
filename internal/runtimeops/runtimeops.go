@@ -818,4 +818,7 @@ func stream(reader io.Reader, log Logger, done chan<- struct{}) {
 	for scanner.Scan() {
 		log(scanner.Text())
 	}
+	if err := scanner.Err(); err != nil {
+		log("Log stream closed: " + err.Error())
+	}
 }

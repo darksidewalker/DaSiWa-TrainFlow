@@ -140,6 +140,10 @@
             <span>Grad Accum</span>
             <input id="gradient_accumulation_steps" type="number" min="1" step="1">
           </label>
+          <label title="Auto Calc target for choosing train batch size from detected GPU VRAM. Higher values may improve utilization but can increase out-of-memory risk.">
+            <span>VRAM Target %</span>
+            <input id="target_vram_percent" type="number" min="50" max="98" step="1">
+          </label>
           <label>
             <span>Save Every</span>
             <input id="save_steps" type="number" min="1" step="1">

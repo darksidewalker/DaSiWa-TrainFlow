@@ -84,6 +84,10 @@ func normalizeSettings(s Settings) Settings {
 	if strings.TrimSpace(s.TextEncoderLR2) == "" {
 		s.TextEncoderLR2 = "1e-5"
 	}
+	if s.TargetVRAMPercent <= 0 {
+		s.TargetVRAMPercent = 90
+	}
+	s.TargetVRAMPercent = clampInt(s.TargetVRAMPercent, 50, 98)
 	return s
 }
 

@@ -55,7 +55,7 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		next, message := applyStableDefaults(settings)
+		next, message := applyStableDefaultsWithVRAM(settings, detectLargestGPUMemoryMB())
 		writeJSON(w, AutoCalcResponse{OK: true, Message: message, Settings: next})
 	})
 

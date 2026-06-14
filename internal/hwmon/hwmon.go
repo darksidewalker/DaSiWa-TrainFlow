@@ -150,6 +150,9 @@ func ramStats() RAMStats {
 		v, _ := strconv.ParseUint(fields[1], 10, 64)
 		values[strings.TrimSuffix(fields[0], ":")] = v * 1024
 	}
+	if scanner.Err() != nil {
+		return RAMStats{}
+	}
 	total := values["MemTotal"]
 	available := values["MemAvailable"]
 	return RAMStats{Total: total, Used: total - available}

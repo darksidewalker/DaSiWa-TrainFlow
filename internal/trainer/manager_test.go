@@ -2,6 +2,8 @@ package trainer
 
 import (
 	"bufio"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -47,5 +49,41 @@ func TestSampleStepFromName(t *testing.T) {
 	got := sampleStepFromName("untitled_001100_00_20260613144549_42.png")
 	if got != 1100 {
 		t.Fatalf("step = %d, want 1100", got)
+	}
+}
+
+func TestCreateTrainingBootstrapAddsSdScriptsToSysPath(t *testing.T) {
+	root := t.TempDir()
+	trainDir := filepath.Join(root, "training", "sd-scripts")
+	configDir := filepath.Join(root, "training", "output", "project", "configs")
+	trainScript := filepath.Join(trainDir, "sdxl_train_network.py")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	bootstrapPath, err := createTrainingBootstrap(trainDir, trainScript, configDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bootstrapPath != filepath.Join(configDir, "trainflow_train_bootstrap.py") {
+		t.Fatalf("bootstrap path = %q, want file in config dir", bootstrapPath)
+	}
+
+	data, err := os.ReadFile(bootstrapPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	checks := []string{
+		"if train_dir not in sys.path:",
+		"sys.path.insert(0, train_dir)",
+		"os.chdir(train_dir)",
+		"sys.argv[0] = train_script",
+		"runpy.run_path(train_script, run_name=\"__main__\")",
+	}
+	for _, check := range checks {
+		if !strings.Contains(content, check) {
+			t.Fatalf("bootstrap content missing %q:\n%s", check, content)
+		}
 	}
 }

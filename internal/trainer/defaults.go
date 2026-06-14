@@ -3,6 +3,8 @@ package trainer
 import (
 	"fmt"
 	"math"
+	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -49,6 +51,10 @@ func defaultsForProfile(profile trainingProfile) profileDefaults {
 }
 
 func applyStableDefaults(s Settings) (Settings, string) {
+	return applyStableDefaultsWithVRAM(s, 0)
+}
+
+func applyStableDefaultsWithVRAM(s Settings, totalVRAMMB int) (Settings, string) {
 	s = normalizeSettings(s)
 	requestedOptimizer := strings.TrimSpace(s.Optimizer)
 	profile := profileFor(s)
@@ -67,7 +73,7 @@ func applyStableDefaults(s Settings) (Settings, string) {
 	if requestedOptimizer != "" {
 		s.Optimizer = requestedOptimizer
 	}
-	s.TrainBatchSize = 1
+	s.TrainBatchSize = recommendedBatchSize(profile, s, totalVRAMMB)
 	s.GradientAccumulationSteps = recommendedGradAccum(imageCount)
 	s.TrainUNetOnly = true
 	s.FlashAttention = false
@@ -92,7 +98,47 @@ func applyStableDefaults(s Settings) (Settings, string) {
 		steps,
 	)
 	message = fmt.Sprintf("%s Actual exposure: %.1f repeats/image after rounding.", message, actualRepeats)
+	if totalVRAMMB > 0 {
+		message = fmt.Sprintf("%s VRAM target: %d%% of %d MB.", message, s.TargetVRAMPercent, totalVRAMMB)
+	} else {
+		message += " VRAM auto-detect unavailable; using safe batch defaults."
+	}
 	return s, message
+}
+
+func recommendedBatchSize(profile trainingProfile, s Settings, totalVRAMMB int) int {
+	if totalVRAMMB <= 0 {
+		return 1
+	}
+	baseMB, perBatchMB, maxBatch := vramEstimate(profile, s.NetworkRank)
+	targetMB := totalVRAMMB * s.TargetVRAMPercent / 100
+	batch := (targetMB - baseMB) / perBatchMB
+	return clampInt(batch, 1, maxBatch)
+}
+
+func vramEstimate(profile trainingProfile, rank int) (baseMB, perBatchMB, maxBatch int) {
+	rankOverDefault := maxInt(rank-32, 0)
+	switch profile.Architecture {
+	case ArchitectureSDXL:
+		return 10000 + rankOverDefault*40, 4500, 8
+	default:
+		return 15000 + rankOverDefault*60, 7500, 4
+	}
+}
+
+func detectLargestGPUMemoryMB() int {
+	out, err := exec.Command("nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits").Output()
+	if err != nil {
+		return 0
+	}
+	maxMemory := 0
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		value, err := strconv.Atoi(strings.TrimSpace(line))
+		if err == nil && value > maxMemory {
+			maxMemory = value
+		}
+	}
+	return maxMemory
 }
 
 func recommendedGradAccum(imageCount int) int {
@@ -114,6 +160,13 @@ func roundUpTo(value, step int) int {
 		return step
 	}
 	return ((value + step - 1) / step) * step
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func clampInt(value, minValue, maxValue int) int {

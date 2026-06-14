@@ -142,13 +142,17 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 	}
 	trainDir := filepath.Join(m.root, "training", "sd-scripts")
 	trainScript := profile.trainingScript(m.root)
+	bootstrapScript, err := createTrainingBootstrap(trainDir, trainScript, configDir)
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
 	args := []string{
 		"-m", "accelerate.commands.launch",
 		"--num_processes=1",
 		"--num_machines=1",
 		"--mixed_precision=bf16",
 		"--dynamo_backend=no",
-		trainScript,
+		bootstrapScript,
 		"--config_file", trainingTOML,
 		"--dataset_config", datasetTOML,
 	}
@@ -384,7 +388,11 @@ func (m *Manager) waitForExit(cmd *exec.Cmd, sampleDir string) {
 
 func trainingEnv(trainDir string) []string {
 	env := os.Environ()
-	env = append(env, "PYTHONPATH="+trainDir+string(os.PathListSeparator)+os.Getenv("PYTHONPATH"))
+	pythonPath := trainDir
+	if existing := os.Getenv("PYTHONPATH"); existing != "" {
+		pythonPath += string(os.PathListSeparator) + existing
+	}
+	env = append(env, "PYTHONPATH="+pythonPath)
 	env = append(env, "PYTHONIOENCODING=utf-8")
 	env = append(env, "PYTHONWARNINGS=ignore")
 	env = append(env, "TORCH_CPP_LOG_LEVEL=ERROR")
@@ -392,6 +400,35 @@ func trainingEnv(trainDir string) []string {
 	env = append(env, "CUDA_VISIBLE_DEVICES=0")
 	env = append(env, "ACCELERATE_USE_CPU=False")
 	return env
+}
+
+func createTrainingBootstrap(trainDir, trainScript, configDir string) (string, error) {
+	bootstrapPath := filepath.Join(configDir, "trainflow_train_bootstrap.py")
+	trainDirJSON, err := json.Marshal(filepath.ToSlash(absPath(trainDir)))
+	if err != nil {
+		return "", err
+	}
+	trainScriptJSON, err := json.Marshal(filepath.ToSlash(absPath(trainScript)))
+	if err != nil {
+		return "", err
+	}
+	content := fmt.Sprintf(`import os
+import runpy
+import sys
+
+train_dir = %s
+train_script = %s
+
+if train_dir not in sys.path:
+    sys.path.insert(0, train_dir)
+os.chdir(train_dir)
+sys.argv[0] = train_script
+runpy.run_path(train_script, run_name="__main__")
+`, trainDirJSON, trainScriptJSON)
+	if err := os.WriteFile(bootstrapPath, []byte(content), 0644); err != nil {
+		return "", err
+	}
+	return bootstrapPath, nil
 }
 
 func datasetPrepArgs(root, action string, s Settings) []string {
