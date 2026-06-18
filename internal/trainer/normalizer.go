@@ -24,8 +24,8 @@ func validVideoExt(name string) bool {
 	return validVideoExtensions[strings.ToLower(filepath.Ext(name))]
 }
 
-func preparedVideoDatasetPath(root string, s Settings) string {
-	return filepath.Join(root, "training", "prepared", projectNameForSettings(s)+"-video")
+func preparedVideoDatasetPath(datasetPath string) string {
+	return filepath.Join(datasetPath, "input")
 }
 
 func listDatasetVideos(datasetPath string) ([]string, error) {

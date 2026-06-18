@@ -380,7 +380,7 @@ func (m *Manager) startMusubiSequenced(s Settings, profile trainingProfile, proj
 	defer cancel()
 
 	// Step 1: Video normalization (only if dataset path contains video files)
-	videoOutputDir := preparedVideoDatasetPath(m.root, s)
+	videoOutputDir := preparedVideoDatasetPath(s.DatasetPath)
 	normalizeNeeded := false
 	if dirExists(s.DatasetPath) {
 		if files, err := os.ReadDir(s.DatasetPath); err == nil {
@@ -590,7 +590,7 @@ func (m *Manager) StartDatasetPrep(action string, s Settings) (StartResponse, er
 		if _, err := exec.LookPath("ffmpeg"); err != nil {
 			return StartResponse{OK: false, Message: "ffmpeg not found in PATH; install ffmpeg before video normalization"}, nil
 		}
-		outputDir := preparedVideoDatasetPath(m.root, s)
+		outputDir := preparedVideoDatasetPath(s.DatasetPath)
 		m.mu.Lock()
 		m.trainingCmd = nil
 		m.running = true
