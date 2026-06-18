@@ -339,7 +339,7 @@
                 <label class="span-2"><span>Extra ffmpeg args</span><input id="video_extra_args" autocomplete="off" placeholder="-pix_fmt yuv420p"></label>
               </div>
               <div class="prep-actions">
-                <button id="normalizeVideoButton" class="secondary" title="Normalize videos into training/prepared/<project>-video with FFmpeg. Captions are copied beside normalized videos.">Normalize Video</button>
+                <button id="normalizeVideoButton" class="secondary" title="Normalize videos into the dataset folder with FFmpeg. Captions are copied beside normalized videos.">Normalize Video</button>
                 <button id="writeMusubiDatasetButton" class="secondary" title="Write Musubi video dataset TOML under training/output/<project>/configs. Also happens automatically on Save/Start.">Build TOML</button>
                 <button id="cacheMusubiTextButton" class="secondary" title="Run Musubi text encoder caching. Start also runs this automatically for LTX/WAN.">Cache Text</button>
                 <button id="cacheMusubiLatentsButton" class="secondary" title="Run Musubi latent caching. Start also runs this automatically for LTX/WAN after TOML changes, caption edits, or video changes.">Cache Latents</button>
