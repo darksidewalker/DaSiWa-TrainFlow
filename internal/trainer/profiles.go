@@ -151,9 +151,7 @@ func normalizeSettings(s Settings) Settings {
 		s.VideoParallelWorkers = 1
 	}
 	if s.Architecture == ArchitectureLTX23 || s.Architecture == ArchitectureWAN22 {
-		if strings.TrimSpace(s.Optimizer) == "" {
-			s.Optimizer = "Prodigy"
-		}
+		s.Optimizer = "Prodigy"
 		if s.NetworkRank <= 0 || s.NetworkRank == 32 {
 			s.NetworkRank = 128
 		}

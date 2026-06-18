@@ -9,43 +9,90 @@ import (
 )
 
 type profileDefaults struct {
-	NetworkRank    int
-	LearningRate   string
-	UNetLR         string
-	TextEncoderLR1 string
-	TextEncoderLR2 string
-	Optimizer      string
-	BaseSteps      int
-	TargetRepeats  int
-	MinSteps       int
-	MaxSteps       int
+	NetworkRank        int
+	LearningRate       string
+	UNetLR             string
+	TextEncoderLR1     string
+	TextEncoderLR2     string
+	Optimizer          string
+	BaseSteps          int
+	TargetRepeats      int
+	VideoTargetRepeats int
+	VideoTargetEpochs  int
+	VideoTargetSteps   int
+	VideoMinSteps      int
+	VideoMaxSteps      int
+	MinSteps           int
+	MaxSteps           int
 }
 
 func defaultsForProfile(profile trainingProfile) profileDefaults {
 	switch profile.Architecture {
 	case ArchitectureSDXL:
 		return profileDefaults{
-			NetworkRank:    32,
-			LearningRate:   "1e-4",
-			UNetLR:         "1e-4",
-			TextEncoderLR1: "1e-5",
-			TextEncoderLR2: "1e-5",
-			Optimizer:      "AdamW8bit",
-			BaseSteps:      1800,
-			TargetRepeats:  30,
-			MinSteps:       1200,
-			MaxSteps:       3600,
+			NetworkRank:        32,
+			LearningRate:       "1e-4",
+			UNetLR:             "1e-4",
+			TextEncoderLR1:     "1e-5",
+			TextEncoderLR2:     "1e-5",
+			Optimizer:          "AdamW8bit",
+			BaseSteps:          1800,
+			TargetRepeats:      30,
+			VideoTargetRepeats: 0,
+			VideoTargetEpochs:  0,
+			VideoTargetSteps:   0,
+			VideoMinSteps:      0,
+			VideoMaxSteps:      0,
+			MinSteps:           1200,
+			MaxSteps:           3600,
+		}
+	case ArchitectureLTX23:
+		return profileDefaults{
+			NetworkRank:        128,
+			LearningRate:       "1.0",
+			UNetLR:             "1e-4",
+			Optimizer:          "Prodigy",
+			BaseSteps:          1100,
+			TargetRepeats:      19,
+			VideoTargetRepeats: 19,
+			VideoTargetEpochs:  6,
+			VideoTargetSteps:   3200,
+			VideoMinSteps:      3000,
+			VideoMaxSteps:      4000,
+			MinSteps:           800,
+			MaxSteps:           2200,
+		}
+	case ArchitectureWAN22:
+		return profileDefaults{
+			NetworkRank:        128,
+			LearningRate:       "1.0",
+			UNetLR:             "1e-4",
+			Optimizer:          "Prodigy",
+			BaseSteps:          1800,
+			TargetRepeats:      30,
+			VideoTargetRepeats: 30,
+			VideoTargetEpochs:  6,
+			VideoTargetSteps:   3200,
+			VideoMinSteps:      3000,
+			VideoMaxSteps:      4000,
+			MinSteps:           1200,
+			MaxSteps:           3600,
 		}
 	default:
 		return profileDefaults{
-			NetworkRank:   32,
-			LearningRate:  "1e-4",
-			UNetLR:        "1e-4",
-			Optimizer:     "AdamW8bit",
-			BaseSteps:     1100,
-			TargetRepeats: 19,
-			MinSteps:      800,
-			MaxSteps:      2200,
+			NetworkRank:        32,
+			LearningRate:       "1e-4",
+			UNetLR:             "1e-4",
+			Optimizer:          "AdamW8bit",
+			BaseSteps:          1100,
+			TargetRepeats:      19,
+			VideoTargetRepeats: 0,
+			VideoTargetEpochs:  0,
+			VideoTargetSteps:   0,
+			VideoMinSteps:      0,
+			VideoMaxSteps:      0,
+			MinSteps:           800,
+			MaxSteps:           2200,
 		}
 	}
 }
@@ -56,30 +103,78 @@ func applyStableDefaults(s Settings) (Settings, string) {
 
 func applyStableDefaultsWithVRAM(s Settings, totalVRAMMB int) (Settings, string) {
 	s = normalizeSettings(s)
-	requestedOptimizer := strings.TrimSpace(s.Optimizer)
 	profile := profileFor(s)
 	defaults := defaultsForProfile(profile)
-	imageCount := countDatasetImages(s.DatasetPath)
+
+	var imageCount int
+	if profile.Video {
+		imageCount = countDatasetVideos(s.DatasetPath)
+	} else {
+		imageCount = countDatasetImages(s.DatasetPath)
+	}
 	if imageCount <= 0 {
 		imageCount = 30
 	}
 
 	s.NetworkRank = defaults.NetworkRank
-	s.LearningRate = defaults.LearningRate
+	if !profile.Video {
+		if s.Optimizer == "" {
+			s.Optimizer = defaults.Optimizer
+		}
+		if s.LearningRate == "" {
+			s.LearningRate = defaults.LearningRate
+		}
+	}
 	s.UNetLR = defaults.UNetLR
 	s.TextEncoderLR1 = defaults.TextEncoderLR1
 	s.TextEncoderLR2 = defaults.TextEncoderLR2
-	s.Optimizer = defaults.Optimizer
-	if requestedOptimizer != "" {
-		s.Optimizer = requestedOptimizer
-	}
 	s.TrainBatchSize = recommendedBatchSize(profile, s, totalVRAMMB)
-	s.GradientAccumulationSteps = recommendedGradAccum(imageCount)
+	s.GradientAccumulationSteps = recommendedGradAccum(profile, imageCount, totalVRAMMB)
 	s.TrainUNetOnly = true
 	s.FlashAttention = false
 	s = normalizeSettings(s)
 
 	effectiveBatch := s.TrainBatchSize * s.GradientAccumulationSteps
+
+	if profile.Video && defaults.VideoTargetRepeats > 0 {
+		targetEpochs := s.TargetEpochs
+		if targetEpochs <= 0 {
+			targetEpochs = defaults.VideoTargetEpochs
+		}
+		s.VideoNumRepeats = recommendedVideoRepeats(imageCount, targetEpochs, s.TrainBatchSize, defaults)
+		if s.TargetEpochs <= 0 {
+			s.TargetEpochs = targetEpochs
+		}
+		effectiveVideoSteps := s.TargetEpochs * imageCount * s.VideoNumRepeats / maxInt(s.TrainBatchSize, 1)
+		steps := effectiveVideoSteps / maxInt(s.GradientAccumulationSteps, 1)
+		if steps < 1 {
+			steps = 1
+		}
+		s.TrainingSteps = steps
+		s.SaveSteps = recommendedVideoInterval(steps)
+		s.SampleSteps = recommendedVideoInterval(steps)
+		message := fmt.Sprintf(
+			"%s auto calc: %d videos, chose %d repeats/video x %d epochs = %d effective steps; batch %d x grad %d gives %d optimizer steps.",
+			profile.Label,
+			imageCount,
+			s.VideoNumRepeats,
+			s.TargetEpochs,
+			effectiveVideoSteps,
+			s.TrainBatchSize,
+			s.GradientAccumulationSteps,
+			s.TrainingSteps,
+		)
+		if defaults.VideoMinSteps > 0 && defaults.VideoMaxSteps > 0 {
+			message = fmt.Sprintf("%s Target window: %d-%d effective steps.", message, defaults.VideoMinSteps, defaults.VideoMaxSteps)
+		}
+		if totalVRAMMB > 0 {
+			message = fmt.Sprintf("%s VRAM target: %d%% of %d MB.", message, s.TargetVRAMPercent, totalVRAMMB)
+		} else {
+			message += " VRAM auto-detect unavailable; using safe batch defaults."
+		}
+		return s, message
+	}
+
 	steps := int(math.Ceil(float64(imageCount*defaults.TargetRepeats) / float64(effectiveBatch)))
 	steps = clampInt(roundUpTo(steps, 50), defaults.MinSteps, defaults.MaxSteps)
 	s.TrainingSteps = steps
@@ -107,6 +202,9 @@ func applyStableDefaultsWithVRAM(s Settings, totalVRAMMB int) (Settings, string)
 }
 
 func recommendedBatchSize(profile trainingProfile, s Settings, totalVRAMMB int) int {
+	if profile.Video {
+		return 1
+	}
 	if totalVRAMMB <= 0 {
 		return 1
 	}
@@ -141,11 +239,59 @@ func detectLargestGPUMemoryMB() int {
 	return maxMemory
 }
 
-func recommendedGradAccum(imageCount int) int {
+func recommendedGradAccum(profile trainingProfile, imageCount, totalVRAMMB int) int {
+	if profile.Video {
+		switch {
+		case totalVRAMMB >= 30000:
+			return 4
+		case totalVRAMMB >= 20000:
+			return 2
+		default:
+			return 1
+		}
+	}
 	if imageCount >= 80 {
 		return 2
 	}
 	return 1
+}
+
+func recommendedVideoRepeats(videoCount, epochs, batchSize int, defaults profileDefaults) int {
+	if videoCount <= 0 || epochs <= 0 {
+		return maxInt(defaults.VideoTargetRepeats, 1)
+	}
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+	exactRepeats := float64(defaults.VideoTargetSteps*batchSize) / float64(videoCount*epochs)
+	base := int(math.Floor(exactRepeats))
+	if base < 1 {
+		base = 1
+	}
+	bestRepeats := maxInt(defaults.VideoTargetRepeats, 1)
+	bestScore := math.Inf(1)
+	for _, repeats := range []int{base - 1, base, base + 1, base + 2} {
+		if repeats < 1 {
+			continue
+		}
+		steps := videoCount * epochs * repeats / batchSize
+		score := math.Abs(float64(steps - defaults.VideoTargetSteps))
+		if steps < defaults.VideoMinSteps {
+			score += float64(defaults.VideoMinSteps-steps) * 3
+		}
+		if defaults.VideoMaxSteps > 0 && steps > defaults.VideoMaxSteps {
+			score += float64(steps-defaults.VideoMaxSteps) * 3
+		}
+		if score < bestScore {
+			bestScore = score
+			bestRepeats = repeats
+		}
+	}
+	return maxInt(bestRepeats, 1)
+}
+
+func recommendedVideoInterval(steps int) int {
+	return clampInt(roundUpTo(steps/12, 50), 250, 500)
 }
 
 func recommendedInterval(steps int) int {

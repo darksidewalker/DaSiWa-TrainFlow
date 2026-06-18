@@ -317,3 +317,120 @@ func TestNormalizeSettingsProdigyLearningRate(t *testing.T) {
 		t.Fatalf("expected AdamW8bit learning rate 1e-4 after Prodigy, got %q", next.LearningRate)
 	}
 }
+
+func TestApplyStableDefaultsLTX23SetsVideoRepeats(t *testing.T) {
+	dir := testVideoDataset(t, 10)
+	settings := DefaultSettings(dir)
+	settings.Architecture = ArchitectureLTX23
+	settings.DatasetPath = dir
+
+	next, message := applyStableDefaults(settings)
+
+	if next.Architecture != ArchitectureLTX23 {
+		t.Fatalf("expected LTX 2.3 architecture, got %q", next.Architecture)
+	}
+	if next.VideoNumRepeats != 53 {
+		t.Fatalf("expected VideoNumRepeats=53 for LTX 2.3, got %d (%s)", next.VideoNumRepeats, message)
+	}
+	if next.TargetEpochs != 6 {
+		t.Fatalf("expected TargetEpochs=6 for LTX 2.3, got %d", next.TargetEpochs)
+	}
+	if next.TrainingSteps != 3180 {
+		t.Fatalf("expected estimated optimizer steps=3180 for LTX 2.3, got %d (%s)", next.TrainingSteps, message)
+	}
+	if next.NetworkRank != 128 || next.Optimizer != "Prodigy" || next.LearningRate != "1.0" {
+		t.Fatalf("unexpected LTX 2.3 defaults: %+v", next)
+	}
+	if !strings.Contains(message, "10 videos") || !strings.Contains(message, "effective steps") {
+		t.Fatalf("expected video message, got %q", message)
+	}
+}
+
+func TestApplyStableDefaultsWAN22SetsVideoRepeats(t *testing.T) {
+	dir := testVideoDataset(t, 15)
+	settings := DefaultSettings(dir)
+	settings.Architecture = ArchitectureWAN22
+	settings.DatasetPath = dir
+
+	next, message := applyStableDefaults(settings)
+
+	if next.Architecture != ArchitectureWAN22 {
+		t.Fatalf("expected Wan 2.2 architecture, got %q", next.Architecture)
+	}
+	if next.VideoNumRepeats != 36 {
+		t.Fatalf("expected VideoNumRepeats=36 for Wan 2.2, got %d (%s)", next.VideoNumRepeats, message)
+	}
+	if next.TargetEpochs != 6 {
+		t.Fatalf("expected TargetEpochs=6 for Wan 2.2, got %d", next.TargetEpochs)
+	}
+	if next.TrainingSteps != 3240 {
+		t.Fatalf("expected estimated optimizer steps=3240 for Wan 2.2, got %d (%s)", next.TrainingSteps, message)
+	}
+	if next.NetworkRank != 128 || next.Optimizer != "Prodigy" || next.LearningRate != "1.0" {
+		t.Fatalf("unexpected Wan 2.2 defaults: %+v", next)
+	}
+	if !strings.Contains(message, "15 videos") || !strings.Contains(message, "effective steps") {
+		t.Fatalf("expected video message, got %q", message)
+	}
+}
+
+func TestApplyStableDefaultsVideoPreservesUserEpochs(t *testing.T) {
+	dir := testVideoDataset(t, 10)
+	settings := DefaultSettings(dir)
+	settings.Architecture = ArchitectureLTX23
+	settings.DatasetPath = dir
+	settings.TargetEpochs = 12
+
+	next, _ := applyStableDefaults(settings)
+
+	if next.TargetEpochs != 12 {
+		t.Fatalf("expected user TargetEpochs preserved, got %d", next.TargetEpochs)
+	}
+	if next.VideoNumRepeats != 27 {
+		t.Fatalf("expected VideoNumRepeats=27, got %d", next.VideoNumRepeats)
+	}
+	if next.TrainingSteps != 3240 {
+		t.Fatalf("expected estimated optimizer steps=3240, got %d", next.TrainingSteps)
+	}
+}
+
+func TestApplyStableDefaultsVideoUsesGradAccumForHighVRAM(t *testing.T) {
+	dir := testVideoDataset(t, 72)
+	settings := DefaultSettings(dir)
+	settings.Architecture = ArchitectureLTX23
+	settings.DatasetPath = dir
+	settings.TargetVRAMPercent = 90
+
+	next, message := applyStableDefaultsWithVRAM(settings, 32607)
+
+	if next.TrainBatchSize != 1 {
+		t.Fatalf("expected Musubi video auto calc to keep batch size 1, got %d", next.TrainBatchSize)
+	}
+	if next.GradientAccumulationSteps != 4 {
+		t.Fatalf("expected high VRAM video auto calc to use grad accumulation 4, got %d", next.GradientAccumulationSteps)
+	}
+	if next.VideoNumRepeats != 7 {
+		t.Fatalf("expected VideoNumRepeats=7 for 72-video dataset, got %d (%s)", next.VideoNumRepeats, message)
+	}
+	if next.TrainingSteps != 756 {
+		t.Fatalf("expected optimizer steps=756 after grad accumulation, got %d (%s)", next.TrainingSteps, message)
+	}
+	if next.SaveSteps != 250 || next.SampleSteps != 250 {
+		t.Fatalf("expected video save/sample interval 250, got save=%d sample=%d", next.SaveSteps, next.SampleSteps)
+	}
+	if !strings.Contains(message, "3024 effective steps") || !strings.Contains(message, "grad 4") {
+		t.Fatalf("expected effective-step video message, got %q", message)
+	}
+}
+
+func testVideoDataset(t *testing.T, count int) string {
+	t.Helper()
+	dir := t.TempDir()
+	for i := 0; i < count; i++ {
+		path := filepath.Join(dir, strconv.Itoa(i)+".mp4")
+		if err := os.WriteFile(path, []byte("fake video data"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}

@@ -350,17 +350,11 @@ func (m *Manager) startCommandAsync(spec musubiCommand, activity, step, message 
 	return StartResponse{OK: true, Message: message, Step: step}, nil
 }
 
-func isVideoFile(name string) bool {
-	ext := strings.ToLower(filepath.Ext(name))
-	return ext == ".mp4" || ext == ".mkv" || ext == ".mov" || ext == ".avi" || ext == ".webm" || ext == ".m4v"
-}
-
 // startMusubiSequenced runs the full Musubi pipeline in sequence:
-// 1. Video normalization (if dataset contains video files)
-// 2. Dataset TOML generation
-// 3. Text encoder cache
-// 4. Latent cache
-// 5. Training
+// 1. Dataset TOML generation
+// 2. Text encoder cache
+// 3. Latent cache
+// 4. Training
 func (m *Manager) startMusubiSequenced(s Settings, profile trainingProfile, projectName, projectOut, configDir, sampleDir string) (StartResponse, error) {
 	m.mu.Lock()
 	if m.running {
@@ -379,77 +373,10 @@ func (m *Manager) startMusubiSequenced(s Settings, profile trainingProfile, proj
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Step 1: Video normalization (only if dataset path contains video files)
-	videoOutputDir := preparedVideoDatasetPath(s.DatasetPath)
-	normalizeNeeded := false
-	if dirExists(s.DatasetPath) {
-		if files, err := os.ReadDir(s.DatasetPath); err == nil {
-			for _, f := range files {
-				if !f.IsDir() && isVideoFile(f.Name()) {
-					normalizeNeeded = true
-					break
-				}
-			}
-		}
-	}
+	// Video normalization is now manual-only (triggered via StartDatasetPrep "normalize-video").
+	// The pipeline below handles: dataset TOML, text cache, latent cache, then training.
 
-	if normalizeNeeded {
-		if _, err := exec.LookPath("ffmpeg"); err != nil {
-			return StartResponse{OK: false, Message: "ffmpeg not found in PATH; install ffmpeg before video normalization"}, nil
-		}
-		resp, err := m.runPipelineStep(ctx, "Video Normalization", "video normalization", func() (musubiCommand, error) {
-			// Build a normalizer command using the normalizer tool
-			args := []string{
-				"-input", s.DatasetPath,
-				"-output", videoOutputDir,
-				"-codec", s.VideoCodec,
-				"-quality", s.VideoQuality,
-				"-encoder_preset", s.VideoEncoderPreset,
-			}
-			if s.VideoWidth > 0 {
-				args = append(args, "-w", strconv.Itoa(s.VideoWidth))
-			}
-			if s.VideoHeight > 0 {
-				args = append(args, "-h", strconv.Itoa(s.VideoHeight))
-			}
-			if s.VideoFPS > 0 {
-				args = append(args, "-fps", strconv.Itoa(s.VideoFPS))
-			}
-			if s.VideoDuration != "" {
-				args = append(args, "-len", s.VideoDuration)
-			}
-			if s.VideoSpeed != "" {
-				args = append(args, "-speed", s.VideoSpeed)
-			}
-			if s.VideoSkipFrames > 0 {
-				args = append(args, "-skip", strconv.Itoa(s.VideoSkipFrames))
-			}
-			if !s.VideoIncludeAudio {
-				args = append(args, "-noaudio")
-			}
-			if s.VideoExtraArgs != "" {
-				args = append(args, strings.Split(s.VideoExtraArgs, " ")...)
-			}
-			return musubiCommand{
-				Program: "normalize-video",
-				Args:    args,
-				Dir:     m.root,
-				Env:     os.Environ(),
-			}, nil
-		})
-		if err != nil {
-			cancel()
-			return resp, err
-		}
-		if !resp.OK {
-			cancel()
-			return resp, nil
-		}
-		// Update dataset path to normalized output for subsequent steps
-		s.DatasetPath = videoOutputDir
-	}
-
-	// Step 2: Generate dataset TOML (file operation, not a command)
+	// Step 1: Generate dataset TOML (file operation, not a command)
 	_, err := createMusubiDatasetTOML(projectName, s, profile, configDir)
 	if err != nil {
 		cancel()

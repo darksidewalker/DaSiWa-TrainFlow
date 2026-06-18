@@ -211,3 +211,38 @@ func TestCreateTrainingBootstrapAddsSdScriptsToSysPath(t *testing.T) {
 		}
 	}
 }
+
+func TestStartMusubiPipelineSkipsAutoNormalization(t *testing.T) {
+	root := t.TempDir()
+	dataset := filepath.Join(root, "videos")
+	if err := os.MkdirAll(dataset, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataset, "clip.mp4"), []byte("video"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(root, NewHub())
+	settings := DefaultSettings(root)
+	settings.Architecture = ArchitectureLTX23
+	settings.ProjectName = "video_project"
+	settings.DatasetPath = dataset
+	settings.TrainBatchSize = 1
+
+	resp, err := m.Start(settings)
+	if err != nil {
+		t.Fatalf("start returned unexpected error: %v", err)
+	}
+	if resp.OK {
+		t.Fatalf("start should fail without python runtime: got ok=true, message=%q", resp.Message)
+	}
+	msg := strings.ToLower(resp.Message)
+	if strings.Contains(msg, "normalize") {
+		t.Fatalf("start should not auto-trigger video normalization: message=%q", resp.Message)
+	}
+	if strings.Contains(msg, "normalize-video") {
+		t.Fatalf("start should not reference normalize-video binary: message=%q", resp.Message)
+	}
+	if strings.Contains(msg, "ffmpeg") {
+		t.Fatalf("start should not check for ffmpeg during training: message=%q", resp.Message)
+	}
+}

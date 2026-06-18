@@ -242,6 +242,20 @@ func countDatasetImages(datasetPath string) int {
 	return count
 }
 
+func countDatasetVideos(datasetPath string) int {
+	entries, err := os.ReadDir(datasetPath)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && validVideoExt(entry.Name()) {
+			count++
+		}
+	}
+	return count
+}
+
 func tomlString(value string) string {
 	return strconv.Quote(value)
 }
