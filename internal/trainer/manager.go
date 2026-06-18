@@ -2,6 +2,7 @@ package trainer
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -83,7 +84,30 @@ func (m *Manager) SaveSettings(s Settings) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(m.settingsPath, data, 0644)
+	if err := os.WriteFile(m.settingsPath, data, 0644); err != nil {
+		return err
+	}
+	// Auto-generate Musubi dataset TOML when saving Musubi-family settings
+	_ = m.writeMusubiDatasetTOMLIfReady(s)
+	return nil
+}
+
+// writeMusubiDatasetTOMLIfReady auto-generates the Musubi dataset TOML when
+// settings indicate a Musubi-family architecture and the output directory exists.
+func (m *Manager) writeMusubiDatasetTOMLIfReady(s Settings) error {
+	profile := profileFor(s)
+	if profile.Family != trainingFamilyMusubi {
+		return nil
+	}
+	projectName := projectNameForSettings(s)
+	projectOut := outputProject(m.root, s)
+	configDir := filepath.Join(projectOut, "configs")
+	// Ensure output and config directories exist
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return err
+	}
+	_, err := createMusubiDatasetTOML(projectName, s, profile, configDir)
+	return err
 }
 
 func (m *Manager) Start(s Settings) (StartResponse, error) {
@@ -106,7 +130,7 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 	}
 
 	projectName := projectNameForSettings(s)
-	projectOut := filepath.Join(m.root, "training", "output", projectName)
+	projectOut := outputProject(m.root, s)
 	sampleDir := filepath.Join(projectOut, "sample")
 	configDir := filepath.Join(projectOut, "configs")
 	for _, dir := range []string{projectOut, sampleDir, configDir} {
@@ -116,6 +140,9 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 	}
 
 	profile := profileFor(s)
+	if profile.Family == trainingFamilyMusubi {
+		return m.startMusubiSequenced(s, profile, projectName, projectOut, configDir, sampleDir)
+	}
 	baseRes, maxBucket := analyzeDatasetResolution(s.DatasetPath)
 	promptPath, err := createSamplePrompts(projectName, s, configDir)
 	if err != nil {
@@ -203,6 +230,343 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 	return StartResponse{OK: true, Message: "Training started."}, nil
 }
 
+// runPipelineStep executes a single pipeline step sequentially with progress logging.
+// It blocks until the step completes (or fails), then returns.
+// The context is used for cancellation (e.g., user stop).
+func (m *Manager) runPipelineStep(ctx context.Context, name, activity string, buildFn func() (musubiCommand, error)) (StartResponse, error) {
+	m.appendLog(fmt.Sprintf("[%s] Starting...", name))
+	m.setPipelineStep(name)
+
+	cmdSpec, err := buildFn()
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	cmd := exec.CommandContext(ctx, cmdSpec.Program, cmdSpec.Args...)
+	cmd.Dir = cmdSpec.Dir
+	cmd.Env = cmdSpec.Env
+	process.Prepare(cmd)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	m.mu.Lock()
+	m.trainingCmd = cmd
+	m.running = true
+	m.activeGPUs = map[string]string{"0": activity}
+	m.logLines = nil
+	m.mu.Unlock()
+
+	m.appendLog(fmt.Sprintf("Launching: %s %s", cmdSpec.Program, strings.Join(cmdSpec.Args, " ")))
+
+	if err := cmd.Start(); err != nil {
+		m.mu.Lock()
+		m.running = false
+		m.trainingCmd = nil
+		m.activeGPUs = map[string]string{}
+		m.mu.Unlock()
+		m.appendLog("Launch failed: " + err.Error())
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			if ctx.Err() == context.Canceled {
+				errCh <- nil // cancellation is not an error
+			} else {
+				errCh <- fmt.Errorf("%s failed: %w", name, err)
+			}
+		} else {
+			errCh <- nil
+		}
+	}()
+
+	go m.pipeLogs(stdout, "")
+	go m.pipeLogs(stderr, "")
+
+	err = <-errCh
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	m.mu.Lock()
+	m.running = false
+	m.trainingCmd = nil
+	m.activeGPUs = map[string]string{}
+	m.mu.Unlock()
+
+	m.appendLog(fmt.Sprintf("[%s] Completed successfully.", name))
+	return StartResponse{OK: true, Message: fmt.Sprintf("%s completed.", name)}, nil
+}
+
+func (m *Manager) setPipelineStep(step string) {
+	m.appendLog(fmt.Sprintf("Pipeline step: %s", step))
+}
+
+func (m *Manager) startCommandAsync(spec musubiCommand, activity, step, message string) (StartResponse, error) {
+	cmd := exec.Command(spec.Program, spec.Args...)
+	cmd.Dir = spec.Dir
+	cmd.Env = spec.Env
+	process.Prepare(cmd)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	m.mu.Lock()
+	m.trainingCmd = cmd
+	m.running = true
+	m.activeGPUs = map[string]string{"0": activity}
+	m.logLines = nil
+	m.mu.Unlock()
+	m.setPipelineStep(step)
+	m.appendLog(fmt.Sprintf("Launching: %s %s", spec.Program, strings.Join(spec.Args, " ")))
+
+	if err := cmd.Start(); err != nil {
+		m.mu.Lock()
+		m.running = false
+		m.trainingCmd = nil
+		m.activeGPUs = map[string]string{}
+		m.mu.Unlock()
+		m.appendLog("Launch failed: " + err.Error())
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	go m.pipeLogs(stdout, "")
+	go m.pipeLogs(stderr, "")
+	go m.waitForExit(cmd, "")
+	return StartResponse{OK: true, Message: message, Step: step}, nil
+}
+
+func isVideoFile(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	return ext == ".mp4" || ext == ".mkv" || ext == ".mov" || ext == ".avi" || ext == ".webm" || ext == ".m4v"
+}
+
+// startMusubiSequenced runs the full Musubi pipeline in sequence:
+// 1. Video normalization (if dataset contains video files)
+// 2. Dataset TOML generation
+// 3. Text encoder cache
+// 4. Latent cache
+// 5. Training
+func (m *Manager) startMusubiSequenced(s Settings, profile trainingProfile, projectName, projectOut, configDir, sampleDir string) (StartResponse, error) {
+	m.mu.Lock()
+	if m.running {
+		m.mu.Unlock()
+		return StartResponse{OK: false, Message: "Training is already running."}, nil
+	}
+	m.mu.Unlock()
+
+	m.mu.Lock()
+	m.logLines = nil
+	m.mu.Unlock()
+
+	m.appendLog(fmt.Sprintf("Starting %s (%s) pipeline...", projectName, profile.Label))
+
+	// Use a cancellable context for the entire pipeline
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Step 1: Video normalization (only if dataset path contains video files)
+	videoOutputDir := preparedVideoDatasetPath(m.root, s)
+	normalizeNeeded := false
+	if dirExists(s.DatasetPath) {
+		if files, err := os.ReadDir(s.DatasetPath); err == nil {
+			for _, f := range files {
+				if !f.IsDir() && isVideoFile(f.Name()) {
+					normalizeNeeded = true
+					break
+				}
+			}
+		}
+	}
+
+	if normalizeNeeded {
+		if _, err := exec.LookPath("ffmpeg"); err != nil {
+			return StartResponse{OK: false, Message: "ffmpeg not found in PATH; install ffmpeg before video normalization"}, nil
+		}
+		resp, err := m.runPipelineStep(ctx, "Video Normalization", "video normalization", func() (musubiCommand, error) {
+			// Build a normalizer command using the normalizer tool
+			args := []string{
+				"-input", s.DatasetPath,
+				"-output", videoOutputDir,
+				"-codec", s.VideoCodec,
+				"-quality", s.VideoQuality,
+				"-encoder_preset", s.VideoEncoderPreset,
+			}
+			if s.VideoWidth > 0 {
+				args = append(args, "-w", strconv.Itoa(s.VideoWidth))
+			}
+			if s.VideoHeight > 0 {
+				args = append(args, "-h", strconv.Itoa(s.VideoHeight))
+			}
+			if s.VideoFPS > 0 {
+				args = append(args, "-fps", strconv.Itoa(s.VideoFPS))
+			}
+			if s.VideoDuration != "" {
+				args = append(args, "-len", s.VideoDuration)
+			}
+			if s.VideoSpeed != "" {
+				args = append(args, "-speed", s.VideoSpeed)
+			}
+			if s.VideoSkipFrames > 0 {
+				args = append(args, "-skip", strconv.Itoa(s.VideoSkipFrames))
+			}
+			if !s.VideoIncludeAudio {
+				args = append(args, "-noaudio")
+			}
+			if s.VideoExtraArgs != "" {
+				args = append(args, strings.Split(s.VideoExtraArgs, " ")...)
+			}
+			return musubiCommand{
+				Program: "normalize-video",
+				Args:    args,
+				Dir:     m.root,
+				Env:     os.Environ(),
+			}, nil
+		})
+		if err != nil {
+			cancel()
+			return resp, err
+		}
+		if !resp.OK {
+			cancel()
+			return resp, nil
+		}
+		// Update dataset path to normalized output for subsequent steps
+		s.DatasetPath = videoOutputDir
+	}
+
+	// Step 2: Generate dataset TOML (file operation, not a command)
+	_, err := createMusubiDatasetTOML(projectName, s, profile, configDir)
+	if err != nil {
+		cancel()
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	m.appendLog("Dataset TOML generated.")
+	m.setPipelineStep("Text Cache")
+
+	// Step 3: Cache text encoder outputs
+	python := pythonExecutable(m.root)
+	if err := validatePythonRuntime(python); err != nil {
+		cancel()
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	if err := validateMusubiSource(m.root); err != nil {
+		cancel()
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	datasetTOML, err := createMusubiDatasetTOML(projectName, s, profile, configDir)
+	if err != nil {
+		cancel()
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	spec, err := buildMusubiCommand(m.root, musubiCommandCacheText, s, datasetTOML, projectOut)
+	if err != nil {
+		cancel()
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	resp, err := m.runPipelineStep(ctx, "Text Cache", "text cache", func() (musubiCommand, error) {
+		return spec, nil
+	})
+	if err != nil {
+		cancel()
+		return resp, err
+	}
+	if !resp.OK {
+		cancel()
+		return resp, nil
+	}
+
+	// Step 4: Cache latents
+	spec, err = buildMusubiCommand(m.root, musubiCommandCacheLatents, s, datasetTOML, projectOut)
+	if err != nil {
+		cancel()
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	resp, err = m.runPipelineStep(ctx, "Latent Cache", "latent cache", func() (musubiCommand, error) {
+		return spec, nil
+	})
+	if err != nil {
+		cancel()
+		return resp, err
+	}
+	if !resp.OK {
+		cancel()
+		return resp, nil
+	}
+
+	// Step 5: Training
+	spec, err = buildMusubiCommand(m.root, musubiCommandTrain, s, datasetTOML, projectOut)
+	if err != nil {
+		cancel()
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	m.setPipelineStep("Training")
+	m.appendLog(fmt.Sprintf("Starting %s training...", profile.Label))
+	m.appendLog("Launching training process...")
+
+	cmd := exec.CommandContext(ctx, spec.Program, spec.Args...)
+	cmd.Dir = spec.Dir
+	cmd.Env = spec.Env
+	process.Prepare(cmd)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		cancel()
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		cancel()
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	m.mu.Lock()
+	m.trainingCmd = cmd
+	m.running = true
+	m.activeGPUs = map[string]string{"0": profile.Label + " training"}
+	m.logLines = nil
+	m.mu.Unlock()
+
+	if err := cmd.Start(); err != nil {
+		cancel()
+		m.mu.Lock()
+		m.running = false
+		m.trainingCmd = nil
+		m.activeGPUs = map[string]string{}
+		m.mu.Unlock()
+		m.appendLog("Launch failed: " + err.Error())
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	go m.pipeLogs(stdout, sampleDir)
+	go m.pipeLogs(stderr, sampleDir)
+	go m.waitForExit(cmd, sampleDir)
+	go func() {
+		<-ctx.Done()
+		m.mu.Lock()
+		if m.trainingCmd != nil && m.running {
+			_ = process.Terminate(m.trainingCmd)
+		}
+		m.mu.Unlock()
+	}()
+
+	return StartResponse{OK: true, Message: "Pipeline started.", Step: "training"}, nil
+}
+
 func (m *Manager) StartDatasetPrep(action string, s Settings) (StartResponse, error) {
 	if err := m.SaveSettings(s); err != nil {
 		return StartResponse{OK: false, Message: err.Error()}, err
@@ -217,6 +581,77 @@ func (m *Manager) StartDatasetPrep(action string, s Settings) (StartResponse, er
 
 	if strings.TrimSpace(s.DatasetPath) == "" || !dirExists(s.DatasetPath) {
 		return StartResponse{OK: false, Message: "Dataset path not found: " + s.DatasetPath}, nil
+	}
+	if action == "normalize-video" {
+		profile := profileFor(s)
+		if profile.Family != trainingFamilyMusubi {
+			return StartResponse{OK: false, Message: "Video normalization is only supported for LTX 2.3 and Wan 2.2 architectures"}, nil
+		}
+		if _, err := exec.LookPath("ffmpeg"); err != nil {
+			return StartResponse{OK: false, Message: "ffmpeg not found in PATH; install ffmpeg before video normalization"}, nil
+		}
+		outputDir := preparedVideoDatasetPath(m.root, s)
+		m.mu.Lock()
+		m.trainingCmd = nil
+		m.running = true
+		m.activeGPUs = map[string]string{"0": "video normalization"}
+		m.logLines = nil
+		m.mu.Unlock()
+		go m.runVideoNormalization(s, outputDir)
+		return StartResponse{OK: true, Message: "Video normalization started.", PreparedPath: filepath.ToSlash(absPath(outputDir)), Step: "normalize-video"}, nil
+	}
+	if action == "musubi-cache-text" || action == "musubi-cache-latents" {
+		profile := profileFor(s)
+		if profile.Family != trainingFamilyMusubi {
+			return StartResponse{OK: false, Message: "Musubi caching is only supported for LTX 2.3 and Wan 2.2 architectures"}, nil
+		}
+		if err := validatePythonRuntime(pythonExecutable(m.root)); err != nil {
+			return StartResponse{OK: false, Message: err.Error()}, err
+		}
+		if err := validateMusubiSource(m.root); err != nil {
+			return StartResponse{OK: false, Message: err.Error()}, err
+		}
+		projectName := projectNameForSettings(s)
+		projectOut := outputProject(m.root, s)
+		configDir := filepath.Join(projectOut, "configs")
+		if err := os.MkdirAll(configDir, 0755); err != nil {
+			return StartResponse{OK: false, Message: err.Error()}, err
+		}
+		datasetTOML, err := createMusubiDatasetTOML(projectName, s, profile, configDir)
+		if err != nil {
+			return StartResponse{OK: false, Message: err.Error()}, err
+		}
+		kind := musubiCommandCacheText
+		label := "text encoder cache"
+		step := "cache-text"
+		if action == "musubi-cache-latents" {
+			kind = musubiCommandCacheLatents
+			label = "latent cache"
+			step = "cache-latents"
+		}
+		spec, err := buildMusubiCommand(m.root, kind, s, datasetTOML, projectOut)
+		if err != nil {
+			return StartResponse{OK: false, Message: err.Error()}, err
+		}
+		return m.startCommandAsync(spec, label, step, "Musubi "+label+" started.")
+	}
+	if action == "musubi-dataset-toml" {
+		profile := profileFor(s)
+		if profile.Family != trainingFamilyMusubi {
+			return StartResponse{OK: false, Message: "Musubi dataset TOML is only supported for LTX 2.3 and Wan 2.2 architectures"}, nil
+		}
+		projectName := projectNameForSettings(s)
+		projectOut := outputProject(m.root, s)
+		configDir := filepath.Join(projectOut, "configs")
+		if err := os.MkdirAll(configDir, 0755); err != nil {
+			return StartResponse{OK: false, Message: err.Error()}, err
+		}
+		tomlPath, err := createMusubiDatasetTOML(projectName, s, profile, configDir)
+		if err != nil {
+			return StartResponse{OK: false, Message: err.Error()}, err
+		}
+		m.appendLog("Musubi dataset TOML generated: " + tomlPath)
+		return StartResponse{OK: true, PreparedPath: tomlPath, Message: "Dataset TOML generated."}, nil
 	}
 	if action != "tag" && action != "resize" && action != "all" {
 		return StartResponse{OK: false, Message: "Unknown dataset prep action: " + action}, nil

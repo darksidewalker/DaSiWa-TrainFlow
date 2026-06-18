@@ -3,6 +3,7 @@ const fields = [
   "project_name",
   "trigger_word",
   "dataset_path",
+  "output_path",
   "dit_path",
   "checkpoint_path",
   "qwen_path",
@@ -35,7 +36,48 @@ const fields = [
   "side_max",
   "tagger_gen_thresh",
   "tagger_char_thresh",
-  "tagger_overwrite"
+  "tagger_overwrite",
+  "target_epochs",
+  "mixed_precision",
+  "num_cpu_threads",
+  "video_width",
+  "video_height",
+  "video_fps",
+  "video_duration",
+  "video_target_frames",
+  "video_frame_extraction",
+  "video_num_repeats",
+  "video_caption_extension",
+  "video_enable_bucket",
+  "video_codec",
+  "video_quality",
+  "video_encoder_preset",
+  "video_speed",
+  "video_skip_frames",
+  "video_parallel_workers",
+  "video_include_audio",
+  "video_extra_args",
+  "ltx_version",
+  "ltx_mode",
+  "ltx_version_check_mode",
+  "wan_task",
+  "blocks_to_swap",
+  "network_alpha",
+  "network_module",
+  "timestep_sampling",
+  "discrete_flow_shift",
+  "fp8_base",
+  "fp8_scaled",
+  "sdpa",
+  "gradient_checkpointing",
+  "use_pinned_memory_for_block_swap",
+  "persistent_data_loader_workers",
+  "save_state_on_train_end",
+  "metadata_author",
+  "metadata_tags",
+  "extra_train_args",
+  "extra_cache_text_args",
+  "extra_cache_latents_args"
 ];
 
 const numericFields = new Set([
@@ -53,7 +95,17 @@ const numericFields = new Set([
   "side_min",
   "side_max",
   "tagger_gen_thresh",
-  "tagger_char_thresh"
+  "tagger_char_thresh",
+  "target_epochs",
+  "num_cpu_threads",
+  "video_width",
+  "video_height",
+  "video_fps",
+  "video_num_repeats",
+  "video_skip_frames",
+  "video_parallel_workers",
+  "blocks_to_swap",
+  "network_alpha"
 ]);
 
 const els = Object.fromEntries(fields.map((id) => [id, document.getElementById(id)]));
@@ -73,6 +125,10 @@ const openOutputButton = document.getElementById("openOutputButton");
 const tagDatasetButton = document.getElementById("tagDatasetButton");
 const resizeDatasetButton = document.getElementById("resizeDatasetButton");
 const prepDatasetButton = document.getElementById("prepDatasetButton");
+const normalizeVideoButton = document.getElementById("normalizeVideoButton");
+const writeMusubiDatasetButton = document.getElementById("writeMusubiDatasetButton");
+const cacheMusubiTextButton = document.getElementById("cacheMusubiTextButton");
+const cacheMusubiLatentsButton = document.getElementById("cacheMusubiLatentsButton");
 const monitorToggle = document.getElementById("monitorToggle");
 const hardwareOverlay = document.getElementById("hardwareOverlay");
 const gallery = document.getElementById("gallery");
@@ -94,6 +150,19 @@ const pathRoots = document.getElementById("pathRoots");
 const pathEntries = document.getElementById("pathEntries");
 const architectureButtons = Array.from(document.querySelectorAll(".architecture-button"));
 const profileFields = Array.from(document.querySelectorAll(".profile-field"));
+const datasetPrepTitle = document.getElementById("datasetPrepTitle");
+const imageDatasetPrep = document.getElementById("imageDatasetPrep");
+const videoDatasetPrep = document.getElementById("videoDatasetPrep");
+const videoNormalizerProxyMap = {
+  video_norm_width_proxy: "video_width",
+  video_norm_height_proxy: "video_height",
+  video_norm_fps_proxy: "video_fps",
+  video_norm_duration_proxy: "video_duration"
+};
+const videoNormalizerProxies = Object.fromEntries(Object.keys(videoNormalizerProxyMap).map((id) => [id, document.getElementById(id)]));
+const ditLabel = document.getElementById("ditLabel");
+const checkpointLabel = document.getElementById("checkpointLabel");
+const qwenLabel = document.getElementById("qwenLabel");
 const vaeLabel = document.getElementById("vaeLabel");
 
 let galleryImages = [];
@@ -103,6 +172,7 @@ let saveTimer = 0;
 let runtimePollTimer = 0;
 let modelPollTimer = 0;
 let running = false;
+let musubiCacheDirty = false;
 let picker = {
   target: "",
   mode: "directory",
@@ -113,6 +183,7 @@ function collectSettings() {
   const data = {};
   for (const id of fields) {
     const el = els[id];
+    if (!el) continue;
     if (el.type === "checkbox") {
       data[id] = el.checked;
     } else if (numericFields.has(id)) {
@@ -136,11 +207,33 @@ function applySettings(data) {
       els[id].value = data[id];
     }
   }
+  syncVideoNormalizerProxiesFromSettings();
   setArchitecture(data.architecture || "anima", false);
 }
 
 function normalizeArchitecture(value) {
-  return value === "sdxl" ? "sdxl" : "anima";
+  return ["anima", "sdxl", "ltx23", "wan22"].includes(value) ? value : "anima";
+}
+
+function isVideoArchitecture(architecture) {
+  return architecture === "ltx23" || architecture === "wan22";
+}
+
+function syncVideoNormalizerProxiesFromSettings() {
+  for (const [proxyID, sourceID] of Object.entries(videoNormalizerProxyMap)) {
+    const proxy = videoNormalizerProxies[proxyID];
+    const source = els[sourceID];
+    if (proxy && source) proxy.value = source.value;
+  }
+}
+
+function syncVideoNormalizerProxyToSetting(proxyID) {
+  const sourceID = videoNormalizerProxyMap[proxyID];
+  const proxy = videoNormalizerProxies[proxyID];
+  const source = els[sourceID];
+  if (!proxy || !source) return;
+  source.value = proxy.value;
+  source.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 function setArchitecture(value, save = true) {
@@ -155,10 +248,28 @@ function setArchitecture(value, save = true) {
     const visible = field.classList.contains(`profile-${architecture}`);
     field.classList.toggle("hidden", !visible);
   }
+  const videoMode = isVideoArchitecture(architecture);
+  if (imageDatasetPrep) imageDatasetPrep.classList.toggle("hidden", videoMode);
+  if (videoDatasetPrep) videoDatasetPrep.classList.toggle("hidden", !videoMode);
+  if (datasetPrepTitle) datasetPrepTitle.textContent = videoMode ? "Video Normalize / Musubi Cache" : "Dataset Prep";
+  syncVideoNormalizerProxiesFromSettings();
   if (architecture === "sdxl") {
+    checkpointLabel.textContent = "SDXL Checkpoint";
+    qwenLabel.textContent = "Qwen3";
     vaeLabel.textContent = "VAE (optional)";
     if (save && (!els.optimizer.value || els.optimizer.value === "Prodigy")) els.optimizer.value = "AdamW8bit";
+  } else if (architecture === "ltx23") {
+    checkpointLabel.textContent = "LTX 2.3 Checkpoint";
+    qwenLabel.textContent = "Gemma Text Encoder";
+    applyVideoDefaults("ltx23", save);
+  } else if (architecture === "wan22") {
+    ditLabel.textContent = "Wan DiT Checkpoint";
+    qwenLabel.textContent = "T5 Text Encoder";
+    vaeLabel.textContent = "Wan VAE";
+    applyVideoDefaults("wan22", save);
   } else {
+    ditLabel.textContent = "DiT";
+    qwenLabel.textContent = "Qwen3";
     vaeLabel.textContent = "VAE";
   }
   normalizeOptimizerLearningRate();
@@ -166,6 +277,55 @@ function setArchitecture(value, save = true) {
     queueSave();
     refreshModelStatus();
   }
+}
+
+function applyVideoDefaults(architecture, save) {
+  if (!save) return;
+  els.optimizer.value = "Prodigy";
+  els.learning_rate.value = "1.0";
+  if (!els.network_rank.value || els.network_rank.value === "32") els.network_rank.value = 128;
+  els.network_alpha.value = 1;
+  els.mixed_precision.value = els.mixed_precision.value || "bf16";
+  els.num_cpu_threads.value = els.num_cpu_threads.value || 8;
+  els.video_target_frames.value = els.video_target_frames.value || "1,65,129";
+  els.video_frame_extraction.value = els.video_frame_extraction.value || "full";
+  els.video_caption_extension.value = els.video_caption_extension.value || ".txt";
+  els.video_enable_bucket.checked = true;
+  els.blocks_to_swap.value = els.blocks_to_swap.value || 14;
+  els.fp8_base.checked = true;
+  els.fp8_scaled.checked = true;
+  els.sdpa.checked = true;
+  els.gradient_checkpointing.checked = true;
+  els.use_pinned_memory_for_block_swap.checked = true;
+  els.persistent_data_loader_workers.checked = true;
+  els.save_state_on_train_end.checked = true;
+  if (architecture === "ltx23") {
+    els.network_module.value = "networks.lora_ltx2";
+    els.timestep_sampling.value = "shifted_logit_normal";
+    els.ltx_version.value = els.ltx_version.value || "2.3";
+    els.ltx_mode.value = els.ltx_mode.value || "video";
+    els.ltx_version_check_mode.value = els.ltx_version_check_mode.value || "error";
+    if (!els.video_width.value) els.video_width.value = 768;
+    if (!els.video_height.value) els.video_height.value = 512;
+  } else {
+    els.network_module.value = "networks.lora_wan";
+    els.wan_task.value = els.wan_task.value || "i2v-A14B";
+    els.timestep_sampling.value = "shift";
+    els.discrete_flow_shift.value = els.discrete_flow_shift.value || "5.0";
+    if (!els.video_width.value) els.video_width.value = 720;
+    if (!els.video_height.value) els.video_height.value = 1280;
+  }
+  if (!els.video_fps.value) els.video_fps.value = 24;
+  if (!els.video_duration.value) els.video_duration.value = 5;
+  if (!els.video_codec.value) els.video_codec.value = "libx264";
+  if (!els.video_quality.value) els.video_quality.value = "19";
+  if (!els.video_encoder_preset.value) els.video_encoder_preset.value = "medium";
+  if (!els.video_speed.value) els.video_speed.value = "1.0";
+  if (!els.video_parallel_workers.value) els.video_parallel_workers.value = 1;
+  if (els.video_skip_frames.value === "") els.video_skip_frames.value = 0;
+  if (!els.video_num_repeats.value) els.video_num_repeats.value = 1;
+  if (!els.target_epochs.value) els.target_epochs.value = 6;
+  syncVideoNormalizerProxiesFromSettings();
 }
 
 function normalizeOptimizerLearningRate() {
@@ -224,6 +384,12 @@ function queueSave() {
   saveTimer = setTimeout(saveSettings, 450);
 }
 
+function markMusubiCacheDirty(reason = "video dataset settings changed") {
+  if (!isVideoArchitecture(els.architecture.value)) return;
+  musubiCacheDirty = true;
+  setStatus(`${reason}; TOML/cache will rebuild automatically on Start.`, true);
+}
+
 async function startTraining() {
   setRunning(true);
   try {
@@ -232,6 +398,7 @@ async function startTraining() {
       body: JSON.stringify(collectSettings())
     });
     setStatus(resp.message, resp.ok);
+    if (resp.ok) musubiCacheDirty = false;
     if (resp.ok && resp.prepared_path) {
       els.dataset_path.value = resp.prepared_path;
       queueSave();
@@ -394,6 +561,10 @@ function setRunning(value) {
   tagDatasetButton.disabled = value;
   resizeDatasetButton.disabled = value;
   prepDatasetButton.disabled = value;
+  normalizeVideoButton.disabled = value;
+  writeMusubiDatasetButton.disabled = value;
+  cacheMusubiTextButton.disabled = value;
+  cacheMusubiLatentsButton.disabled = value;
   stopButton.disabled = !value;
   statusText.textContent = value ? "Training" : "Idle";
 }
@@ -602,8 +773,31 @@ async function boot() {
 }
 
 for (const field of Object.values(els)) {
-  field.addEventListener("input", queueSave);
-  field.addEventListener("change", queueSave);
+  if (!field) continue;
+  field.addEventListener("input", () => {
+    queueSave();
+    if (isVideoArchitecture(els.architecture.value) && (field.id.startsWith("video_") || field.id === "dataset_path" || field.id === "output_path")) {
+      markMusubiCacheDirty(field.id === "dataset_path" ? "video source changed" : field.id === "output_path" ? "output path changed" : "video parameter changed");
+    }
+  });
+  field.addEventListener("change", () => {
+    queueSave();
+    if (isVideoArchitecture(els.architecture.value) && (field.id.startsWith("video_") || field.id === "dataset_path" || field.id === "output_path")) {
+      markMusubiCacheDirty(field.id === "dataset_path" ? "video source changed" : field.id === "output_path" ? "output path changed" : "video parameter changed");
+    }
+  });
+}
+
+for (const [proxyID, proxy] of Object.entries(videoNormalizerProxies)) {
+  if (!proxy) continue;
+  proxy.addEventListener("input", () => {
+    syncVideoNormalizerProxyToSetting(proxyID);
+    markMusubiCacheDirty("video normalizer parameter changed");
+  });
+  proxy.addEventListener("change", () => {
+    syncVideoNormalizerProxyToSetting(proxyID);
+    markMusubiCacheDirty("video normalizer parameter changed");
+  });
 }
 
 for (const button of architectureButtons) {
@@ -629,6 +823,10 @@ startButton.addEventListener("click", startTraining);
 tagDatasetButton.addEventListener("click", () => runDatasetPrep("tag"));
 resizeDatasetButton.addEventListener("click", () => runDatasetPrep("resize"));
 prepDatasetButton.addEventListener("click", () => runDatasetPrep("all"));
+normalizeVideoButton.addEventListener("click", () => runDatasetPrep("normalize-video"));
+writeMusubiDatasetButton.addEventListener("click", () => runDatasetPrep("musubi-dataset-toml"));
+cacheMusubiTextButton.addEventListener("click", () => runDatasetPrep("musubi-cache-text"));
+cacheMusubiLatentsButton.addEventListener("click", () => runDatasetPrep("musubi-cache-latents"));
 stopButton.addEventListener("click", stopTraining);
 quitButton.addEventListener("click", quitApp);
 runtimeLaunch.addEventListener("click", launchRuntimeTool);

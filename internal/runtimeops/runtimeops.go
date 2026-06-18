@@ -61,7 +61,15 @@ func Verify(root string, log Logger) error {
 	if err != nil {
 		return err
 	}
-	return run(log, root, python, "-c", "import sys, torch; print(sys.version); print('torch', torch.__version__, 'cuda', torch.version.cuda, 'available', torch.cuda.is_available())")
+	verifyScript := strings.Join([]string{
+		"import sys, torch",
+		"print(sys.version)",
+		"print('torch', torch.__version__, 'cuda', torch.version.cuda, 'available', torch.cuda.is_available())",
+		"import accelerate, transformers, diffusers, av, cv2, safetensors, sentencepiece, easydict",
+		"import musubi_tuner",
+		"print('musubi_tuner import ok')",
+	}, "; ")
+	return runWithEnv(log, root, []string{"PYTHONPATH=" + musubiPythonPath(root)}, python, "-c", verifyScript)
 }
 
 func ensurePython(root string, log Logger) (string, error) {
@@ -98,6 +106,19 @@ func installTrainerDeps(root string, installer dependencyInstaller, installFlash
 	if err := installer.installIn(sdScriptsDir, "-e", sdScriptsDir); err != nil {
 		return err
 	}
+	if sourceDirExists(musubiSourceDir(root)) {
+		musubiReq := musubiOverlayRequirementsPath(root)
+		log("Installing musubi-tuner overlay requirements into shared TrainFlow runtime...")
+		if err := installer.installIn(root, "-r", musubiReq); err != nil {
+			return err
+		}
+		log("Installing musubi-tuner editable package into shared TrainFlow runtime...")
+		if err := installer.installIn(musubiSourceDir(root), "-e", musubiSourceDir(root)); err != nil {
+			log("Editable musubi-tuner install failed; continuing with PYTHONPATH runtime mode: " + err.Error())
+		}
+	} else {
+		log("Skipping musubi-tuner dependency install; training/musubi-tuner source was not found.")
+	}
 	log("Installing TrainFlow UI/prep dependencies...")
 	if err := installer.install("gradio", "psutil", "toml", "pillow", "onnx", "onnxruntime-gpu", "pandas", "opencv-python"); err != nil {
 		return err
@@ -108,6 +129,27 @@ func installTrainerDeps(root string, installer dependencyInstaller, installFlash
 	}
 	installOptionalFlashAttention(installer, log)
 	return nil
+}
+
+func musubiSourceDir(root string) string {
+	return filepath.Join(root, "training", "musubi-tuner")
+}
+
+func musubiOverlayRequirementsPath(root string) string {
+	return filepath.Join(root, "training", "requirements-musubi-overlay.txt")
+}
+
+func musubiPythonPath(root string) string {
+	return strings.Join([]string{
+		filepath.Join(musubiSourceDir(root), "src"),
+		musubiSourceDir(root),
+		filepath.Join(root, "training", "sd-scripts"),
+	}, string(os.PathListSeparator))
+}
+
+func sourceDirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 func installOptionalFlashAttention(installer dependencyInstaller, log Logger) {

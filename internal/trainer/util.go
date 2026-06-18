@@ -54,7 +54,14 @@ func validImageExt(path string) bool {
 }
 
 func outputProject(root string, s Settings) string {
-	return filepath.Join(root, "training", "output", projectNameForSettings(normalizeSettings(s)))
+	s = normalizeSettings(s)
+	if strings.TrimSpace(s.OutputPath) != "" {
+		if filepath.IsAbs(s.OutputPath) {
+			return filepath.Clean(s.OutputPath)
+		}
+		return filepath.Join(root, filepath.Clean(s.OutputPath))
+	}
+	return filepath.Join(root, "training", "output", projectNameForSettings(s))
 }
 
 func listLatestImages(dir string) []ImageItem {
@@ -186,6 +193,17 @@ func validateSettings(s Settings) []string {
 	entries, err := os.ReadDir(s.DatasetPath)
 	if err != nil {
 		errs = append(errs, "Dataset cannot be read: "+err.Error())
+		return errs
+	}
+	if profile.Video {
+		videos, err := listDatasetVideos(s.DatasetPath)
+		if err != nil {
+			errs = append(errs, "Dataset cannot be read: "+err.Error())
+			return errs
+		}
+		if len(videos) == 0 {
+			errs = append(errs, "No valid videos found in the dataset path.")
+		}
 		return errs
 	}
 	var images []string

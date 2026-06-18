@@ -218,7 +218,16 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 	})
 
 	mux.Handle("/ws", hub)
-	mux.Handle("/", http.FileServer(http.FS(web)))
+	mux.Handle("/", noCacheHandler(http.FileServer(http.FS(web))))
+}
+
+func noCacheHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func modelOverrides(settings Settings) map[string]string {

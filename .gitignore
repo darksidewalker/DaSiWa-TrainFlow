@@ -20,6 +20,13 @@ python_embeded/
 training/output/
 training/logs/
 training/settings.json
+training/prepared/
+training/musubi-tuner/.venv/
+training/musubi-tuner/venv/
+training/musubi-tuner/datasets/
+training/musubi-tuner/output/
+training/musubi-tuner/outputs/
+training/musubi-tuner/logs/
 models/*
 !models/.gitkeep
 

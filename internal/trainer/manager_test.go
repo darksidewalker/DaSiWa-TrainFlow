@@ -52,6 +52,130 @@ func TestSampleStepFromName(t *testing.T) {
 	}
 }
 
+func TestStartDatasetPrepWritesMusubiDatasetTOML(t *testing.T) {
+	root := t.TempDir()
+	dataset := filepath.Join(root, "videos")
+	if err := os.MkdirAll(dataset, 0755); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(root, NewHub())
+	settings := DefaultSettings(root)
+	settings.Architecture = ArchitectureLTX23
+	settings.ProjectName = "video_project"
+	settings.DatasetPath = dataset
+	settings.TrainBatchSize = 1
+
+	resp, err := m.StartDatasetPrep("musubi-dataset-toml", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resp.OK {
+		t.Fatalf("expected response ok, got %#v", resp)
+	}
+	if resp.PreparedPath == "" {
+		t.Fatal("expected generated TOML path in response")
+	}
+	data, err := os.ReadFile(resp.PreparedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "video_directory = ") {
+		t.Fatalf("expected Musubi dataset TOML, got:\n%s", data)
+	}
+}
+
+func TestBuildNormalizeVideoCommandUsesConfigurableFlags(t *testing.T) {
+	root := t.TempDir()
+	settings := DefaultSettings(root)
+	settings.ProjectName = "video_project"
+	settings.DatasetPath = filepath.Join(root, "raw")
+	settings.VideoWidth = 1024
+	settings.VideoHeight = 576
+	settings.VideoFPS = 25
+	settings.VideoDuration = "5.16"
+	settings.VideoCodec = "hevc_nvenc"
+	settings.VideoQuality = "19"
+	settings.VideoEncoderPreset = "p6"
+	settings.VideoSpeed = "1.5"
+	settings.VideoSkipFrames = 10
+	settings.VideoIncludeAudio = true
+	settings.VideoExtraArgs = "-pix_fmt yuv420p"
+
+	cmd := buildNormalizeVideoCommand(root, settings, filepath.Join(settings.DatasetPath, "clip.mp4"), filepath.Join(root, "training", "prepared", "video_project-video", "clip.mp4"))
+	joined := strings.Join(cmd.Args, " ")
+	for _, want := range []string{"-vf", "select='gte(n\\,10)',setpts=PTS/1.5", "fps=25", "pad=1024:576", "-t 5.16", "-c:v hevc_nvenc", "-cq 19", "-preset p6", "-pix_fmt yuv420p"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("normalize command missing %q in %q", want, joined)
+		}
+	}
+	if strings.Contains(joined, " -an ") {
+		t.Fatalf("audio should be preserved when VideoIncludeAudio=true: %q", joined)
+	}
+}
+
+func TestSaveSettingsWritesMusubiDatasetTOML(t *testing.T) {
+	root := t.TempDir()
+	dataset := filepath.Join(root, "videos")
+	if err := os.MkdirAll(dataset, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataset, "clip.mp4"), []byte("video"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(root, NewHub())
+	settings := DefaultSettings(root)
+	settings.Architecture = ArchitectureLTX23
+	settings.ProjectName = "video_project"
+	settings.DatasetPath = dataset
+
+	if err := m.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "training", "output", "video_project", "configs", "video_project_musubi_dataset.toml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "video_directory = ") {
+		t.Fatalf("expected auto-written Musubi TOML, got:\n%s", data)
+	}
+}
+
+func TestMusubiOutputPathDrivesTOMLAndCheckpointDir(t *testing.T) {
+	root := t.TempDir()
+	dataset := filepath.Join(root, "videos")
+	if err := os.MkdirAll(dataset, 0755); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(root, NewHub())
+	settings := DefaultSettings(root)
+	settings.Architecture = ArchitectureLTX23
+	settings.ProjectName = "video_project"
+	settings.DatasetPath = dataset
+	settings.OutputPath = filepath.Join(root, "custom-scope-output")
+
+	if err := m.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	tomlPath := filepath.Join(settings.OutputPath, "configs", "video_project_musubi_dataset.toml")
+	if _, err := os.Stat(tomlPath); err != nil {
+		t.Fatalf("expected TOML under custom output path: %v", err)
+	}
+
+	datasetTOML, err := createMusubiDatasetTOML("video_project", settings, profileFor(settings), filepath.Join(settings.OutputPath, "configs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd, err := buildMusubiCommand(root, musubiCommandTrain, settings, datasetTOML, outputProject(root, settings))
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(cmd.Args, " ")
+	if !strings.Contains(joined, "--output_dir "+settings.OutputPath) {
+		t.Fatalf("expected training output_dir to use custom output path, got %q", joined)
+	}
+}
+
 func TestCreateTrainingBootstrapAddsSdScriptsToSysPath(t *testing.T) {
 	root := t.TempDir()
 	trainDir := filepath.Join(root, "training", "sd-scripts")

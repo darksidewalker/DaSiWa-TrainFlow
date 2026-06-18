@@ -11,6 +11,7 @@ type Settings struct {
 	TriggerWord               string  `json:"trigger_word"`
 	AutoTrigger               bool    `json:"auto_trigger"`
 	DatasetPath               string  `json:"dataset_path"`
+	OutputPath                string  `json:"output_path"`
 	DiTPath                   string  `json:"dit_path"`
 	CheckpointPath            string  `json:"checkpoint_path"`
 	QwenPath                  string  `json:"qwen_path"`
@@ -45,6 +46,47 @@ type Settings struct {
 	TaggerGenThreshold        float64 `json:"tagger_gen_thresh"`
 	TaggerCharThreshold       float64 `json:"tagger_char_thresh"`
 	TaggerOverwrite           bool    `json:"tagger_overwrite"`
+	TargetEpochs              int     `json:"target_epochs"`
+	MixedPrecision            string  `json:"mixed_precision"`
+	NumCPUThreads             int     `json:"num_cpu_threads"`
+	VideoWidth                int     `json:"video_width"`
+	VideoHeight               int     `json:"video_height"`
+	VideoFPS                  int     `json:"video_fps"`
+	VideoDuration             string  `json:"video_duration"`
+	VideoTargetFrames         string  `json:"video_target_frames"`
+	VideoFrameExtraction      string  `json:"video_frame_extraction"`
+	VideoNumRepeats           int     `json:"video_num_repeats"`
+	VideoCaptionExtension     string  `json:"video_caption_extension"`
+	VideoEnableBucket         bool    `json:"video_enable_bucket"`
+	VideoCodec                string  `json:"video_codec"`
+	VideoQuality              string  `json:"video_quality"`
+	VideoEncoderPreset        string  `json:"video_encoder_preset"`
+	VideoSpeed                string  `json:"video_speed"`
+	VideoSkipFrames           int     `json:"video_skip_frames"`
+	VideoParallelWorkers      int     `json:"video_parallel_workers"`
+	VideoIncludeAudio         bool    `json:"video_include_audio"`
+	VideoExtraArgs            string  `json:"video_extra_args"`
+	LTXVersion                string  `json:"ltx_version"`
+	LTXMode                   string  `json:"ltx_mode"`
+	LTXVersionCheckMode       string  `json:"ltx_version_check_mode"`
+	WanTask                   string  `json:"wan_task"`
+	BlocksToSwap              int     `json:"blocks_to_swap"`
+	NetworkAlpha              int     `json:"network_alpha"`
+	NetworkModule             string  `json:"network_module"`
+	TimestepSampling          string  `json:"timestep_sampling"`
+	DiscreteFlowShift         string  `json:"discrete_flow_shift"`
+	FP8Base                   bool    `json:"fp8_base"`
+	FP8Scaled                 bool    `json:"fp8_scaled"`
+	SDPA                      bool    `json:"sdpa"`
+	GradientCheckpointing     bool    `json:"gradient_checkpointing"`
+	UsePinnedMemoryBlockSwap  bool    `json:"use_pinned_memory_for_block_swap"`
+	PersistentWorkers         bool    `json:"persistent_data_loader_workers"`
+	SaveStateOnTrainEnd       bool    `json:"save_state_on_train_end"`
+	MetadataAuthor            string  `json:"metadata_author"`
+	MetadataTags              string  `json:"metadata_tags"`
+	ExtraTrainArgs            string  `json:"extra_train_args"`
+	ExtraCacheTextArgs        string  `json:"extra_cache_text_args"`
+	ExtraCacheLatentsArgs     string  `json:"extra_cache_latents_args"`
 }
 
 func DefaultSettings(root string) Settings {
@@ -55,6 +97,7 @@ func DefaultSettings(root string) Settings {
 		TriggerWord:               "",
 		AutoTrigger:               true,
 		DatasetPath:               home,
+		OutputPath:                "",
 		DiTPath:                   home,
 		CheckpointPath:            home,
 		QwenPath:                  home,
@@ -89,6 +132,39 @@ func DefaultSettings(root string) Settings {
 		TaggerGenThreshold:        0.35,
 		TaggerCharThreshold:       0.85,
 		TaggerOverwrite:           false,
+		TargetEpochs:              6,
+		MixedPrecision:            "bf16",
+		NumCPUThreads:             8,
+		VideoWidth:                768,
+		VideoHeight:               512,
+		VideoFPS:                  24,
+		VideoDuration:             "5",
+		VideoTargetFrames:         "1,65,129",
+		VideoFrameExtraction:      "full",
+		VideoNumRepeats:           1,
+		VideoCaptionExtension:     ".txt",
+		VideoEnableBucket:         true,
+		VideoCodec:                "libx264",
+		VideoQuality:              "19",
+		VideoEncoderPreset:        "medium",
+		VideoSpeed:                "1.0",
+		VideoSkipFrames:           0,
+		VideoParallelWorkers:      1,
+		VideoIncludeAudio:         false,
+		LTXVersion:                "2.3",
+		LTXMode:                   "video",
+		LTXVersionCheckMode:       "error",
+		WanTask:                   "i2v-A14B",
+		BlocksToSwap:              14,
+		NetworkAlpha:              1,
+		FP8Base:                   true,
+		FP8Scaled:                 true,
+		SDPA:                      true,
+		GradientCheckpointing:     true,
+		UsePinnedMemoryBlockSwap:  true,
+		PersistentWorkers:         true,
+		SaveStateOnTrainEnd:       true,
+		MetadataAuthor:            "darksidewalker",
 	}
 }
 
@@ -110,6 +186,7 @@ type StartResponse struct {
 	OK           bool   `json:"ok"`
 	Message      string `json:"message"`
 	PreparedPath string `json:"prepared_path,omitempty"`
+	Step         string `json:"step,omitempty"`
 }
 
 type AutoCalcResponse struct {

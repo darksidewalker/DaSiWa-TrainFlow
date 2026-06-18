@@ -15,6 +15,8 @@
           <div class="architecture-toggle" aria-label="Training architecture">
             <button type="button" class="architecture-button" data-architecture="anima" title="Use the Anima trainer with DiT, Qwen3, and Anima LoRA settings.">Anima</button>
             <button type="button" class="architecture-button" data-architecture="sdxl" title="Use SDXL LoRA training for SDXL, Pony, Illustrious, and compatible checkpoint bases.">SDXL</button>
+            <button type="button" class="architecture-button" data-architecture="ltx23" title="Use Musubi LTX 2.3 video LoRA training.">LTX 2.3</button>
+            <button type="button" class="architecture-button" data-architecture="wan22" title="Use Musubi Wan 2.2 video LoRA training.">Wan 2.2</button>
           </div>
         </div>
         <div class="top-status">
@@ -56,36 +58,43 @@
           <label>
             <span>Dataset Path</span>
             <div class="path-row">
-              <input id="dataset_path" autocomplete="off" placeholder="/path/to/images">
+              <input id="dataset_path" autocomplete="off" placeholder="/path/to/images-or-videos">
               <button class="browse-button" data-target="dataset_path" data-mode="directory" title="Choose dataset folder">...</button>
+            </div>
+          </label>
+          <label>
+            <span>Scope / Output Path</span>
+            <div class="path-row">
+              <input id="output_path" autocomplete="off" placeholder="training/output/<project>">
+              <button class="browse-button" data-target="output_path" data-mode="directory" title="Choose output folder for configs, samples, caches, and LoRA checkpoints">...</button>
             </div>
           </label>
         </section>
 
         <section class="panel model-panel">
           <div class="panel-title">Model Paths</div>
-          <label class="profile-field profile-anima">
-            <span>DiT</span>
+          <label class="profile-field profile-anima profile-wan22">
+            <span id="ditLabel">DiT</span>
             <div class="path-row">
               <input id="dit_path" autocomplete="off">
               <button class="browse-button" data-target="dit_path" data-mode="model" title="Choose DiT model">...</button>
             </div>
           </label>
-          <label class="profile-field profile-sdxl">
-            <span>SDXL Checkpoint</span>
+          <label class="profile-field profile-sdxl profile-ltx23">
+            <span id="checkpointLabel">SDXL Checkpoint</span>
             <div class="path-row">
               <input id="checkpoint_path" autocomplete="off" placeholder="/path/to/illustrious_or_pony.safetensors">
-              <button class="browse-button" data-target="checkpoint_path" data-mode="model" title="Choose SDXL, Pony, Illustrious, or compatible checkpoint">...</button>
+              <button class="browse-button" data-target="checkpoint_path" data-mode="model" title="Choose checkpoint">...</button>
             </div>
           </label>
-          <label class="profile-field profile-anima">
-            <span>Qwen3</span>
+          <label class="profile-field profile-anima profile-ltx23 profile-wan22">
+            <span id="qwenLabel">Qwen3</span>
             <div class="path-row">
               <input id="qwen_path" autocomplete="off">
-              <button class="browse-button" data-target="qwen_path" data-mode="model" title="Choose Qwen3 model">...</button>
+              <button class="browse-button" data-target="qwen_path" data-mode="model" title="Choose text encoder model">...</button>
             </div>
           </label>
-          <label>
+          <label class="profile-field profile-anima profile-sdxl profile-wan22">
             <span id="vaeLabel">VAE</span>
             <div class="path-row">
               <input id="vae_path" autocomplete="off">
@@ -186,6 +195,50 @@
             </label>
           </div>
         </section>
+
+        <section class="panel profile-field profile-ltx23 profile-wan22">
+          <div class="panel-title">Video / Musubi</div>
+          <div class="training-grid">
+            <label><span>Epochs</span><input id="target_epochs" type="number" min="1" step="1"></label>
+            <label><span>CPU Threads</span><input id="num_cpu_threads" type="number" min="1" step="1"></label>
+            <label><span>Video Width</span><input id="video_width" type="number" min="64" step="16"></label>
+            <label><span>Video Height</span><input id="video_height" type="number" min="64" step="16"></label>
+            <label><span>FPS</span><input id="video_fps" type="number" min="1" step="1"></label>
+            <label><span>Duration</span><input id="video_duration" autocomplete="off"></label>
+            <label class="span-2"><span>Target Frames</span><input id="video_target_frames" autocomplete="off" placeholder="1,65,129"></label>
+            <label><span>Repeats</span><input id="video_num_repeats" type="number" min="1" step="1"></label>
+            <label><span>Blocks Swap</span><input id="blocks_to_swap" type="number" min="0" step="1"></label>
+            <label><span>Alpha</span><input id="network_alpha" type="number" min="1" step="1"></label>
+            <label class="span-2"><span>Network Module</span><input id="network_module" autocomplete="off"></label>
+          </div>
+          <details>
+            <summary>Advanced Musubi options</summary>
+            <div class="training-grid">
+              <label><span>Precision</span><input id="mixed_precision" autocomplete="off"></label>
+              <label><span>Frame Extract</span><input id="video_frame_extraction" autocomplete="off"></label>
+              <label><span>Caption Ext</span><input id="video_caption_extension" autocomplete="off"></label>
+              <label><span>LTX Version</span><input id="ltx_version" autocomplete="off"></label>
+              <label><span>LTX Mode</span><input id="ltx_mode" autocomplete="off"></label>
+              <label><span>LTX Check</span><input id="ltx_version_check_mode" autocomplete="off"></label>
+              <label><span>Wan Task</span><input id="wan_task" autocomplete="off"></label>
+              <label><span>Timestep</span><input id="timestep_sampling" autocomplete="off"></label>
+              <label><span>Flow Shift</span><input id="discrete_flow_shift" autocomplete="off"></label>
+              <label><span>Author</span><input id="metadata_author" autocomplete="off"></label>
+              <label class="span-2"><span>Tags</span><input id="metadata_tags" autocomplete="off"></label>
+              <label class="span-2"><span>Extra Train Args</span><input id="extra_train_args" autocomplete="off"></label>
+              <label class="span-2"><span>Extra Cache Text Args</span><input id="extra_cache_text_args" autocomplete="off"></label>
+              <label class="span-2"><span>Extra Cache Latents Args</span><input id="extra_cache_latents_args" autocomplete="off"></label>
+            </div>
+            <label class="check-row"><input id="video_enable_bucket" type="checkbox"><span>Video buckets</span></label>
+            <label class="check-row"><input id="fp8_base" type="checkbox"><span>FP8 base</span></label>
+            <label class="check-row"><input id="fp8_scaled" type="checkbox"><span>FP8 scaled</span></label>
+            <label class="check-row"><input id="sdpa" type="checkbox"><span>SDPA</span></label>
+            <label class="check-row"><input id="gradient_checkpointing" type="checkbox"><span>Gradient checkpointing</span></label>
+            <label class="check-row"><input id="use_pinned_memory_for_block_swap" type="checkbox"><span>Pinned block swap</span></label>
+            <label class="check-row"><input id="persistent_data_loader_workers" type="checkbox"><span>Persistent workers</span></label>
+            <label class="check-row"><input id="save_state_on_train_end" type="checkbox"><span>Save state on end</span></label>
+          </details>
+        </section>
       </aside>
 
       <section class="center-stage">
@@ -235,35 +288,64 @@
             </section>
           </div>
           <div class="panel tool-panel">
-            <div class="panel-title">Dataset Prep</div>
-            <div class="four-col">
-              <label>
-                <span>Min Side</span>
-                <input id="side_min" type="number" min="64" step="64">
+            <div class="panel-title" id="datasetPrepTitle">Dataset Prep</div>
+            <div id="imageDatasetPrep">
+              <div class="four-col">
+                <label>
+                  <span>Min Side</span>
+                  <input id="side_min" type="number" min="64" step="64">
+                </label>
+                <label>
+                  <span>Max Side</span>
+                  <input id="side_max" type="number" min="64" step="64">
+                </label>
+                <label>
+                  <span>General</span>
+                  <input id="tagger_gen_thresh" type="number" min="0" max="1" step="0.01">
+                </label>
+                <label>
+                  <span>Character</span>
+                  <input id="tagger_char_thresh" type="number" min="0" max="1" step="0.01">
+                </label>
+              </div>
+              <label class="check-row">
+                <input id="tagger_overwrite" type="checkbox">
+                <span>Overwrite captions</span>
               </label>
-              <label>
-                <span>Max Side</span>
-                <input id="side_max" type="number" min="64" step="64">
-              </label>
-              <label>
-                <span>General</span>
-                <input id="tagger_gen_thresh" type="number" min="0" max="1" step="0.01">
-              </label>
-              <label>
-                <span>Character</span>
-                <input id="tagger_char_thresh" type="number" min="0" max="1" step="0.01">
-              </label>
+              <div class="prep-actions">
+                <button id="tagDatasetButton" class="secondary" title="Run the WD ONNX tagger on the current Dataset Path. Writes .txt captions beside the source images. If Overwrite captions is off, new tags are appended.">Tag Captions</button>
+                <button id="resizeDatasetButton" class="secondary" title="Copy and resize images from the current Dataset Path into training/prepared/<project>. Captions are copied too, and Dataset Path switches to the prepared folder.">Resize Copy</button>
+                <button id="prepDatasetButton" class="primary" title="Run caption tagging first, then create the resized prepared copy. Dataset Path switches to training/prepared/<project> when started.">Tag + Resize</button>
+              </div>
+              <div class="muted-line">Tagging writes .txt captions beside the source images. Resize Copy writes a prepared copy under training/prepared.</div>
             </div>
-            <label class="check-row">
-              <input id="tagger_overwrite" type="checkbox">
-              <span>Overwrite captions</span>
-            </label>
-            <div class="prep-actions">
-              <button id="tagDatasetButton" class="secondary" title="Run the WD ONNX tagger on the current Dataset Path. Writes .txt captions beside the source images. If Overwrite captions is off, new tags are appended.">Tag Captions</button>
-              <button id="resizeDatasetButton" class="secondary" title="Copy and resize images from the current Dataset Path into training/prepared/<project>. Captions are copied too, and Dataset Path switches to the prepared folder.">Resize Copy</button>
-              <button id="prepDatasetButton" class="primary" title="Run caption tagging first, then create the resized prepared copy. Dataset Path switches to training/prepared/<project> when started.">Tag + Resize</button>
+            <div id="videoDatasetPrep" class="hidden">
+              <div class="four-col">
+                <label><span>Width (-w)</span><input id="video_norm_width_proxy" type="number" min="64" step="16"></label>
+                <label><span>Height (-h)</span><input id="video_norm_height_proxy" type="number" min="64" step="16"></label>
+                <label><span>FPS (-fps)</span><input id="video_norm_fps_proxy" type="number" min="1" step="1"></label>
+                <label><span>Duration (-len)</span><input id="video_norm_duration_proxy" autocomplete="off"></label>
+              </div>
+              <div class="four-col">
+                <label><span>Codec (-codec)</span><select id="video_codec"><option>libx264</option><option>libx265</option><option>h264_nvenc</option><option>hevc_nvenc</option><option>av1_nvenc</option></select></label>
+                <label><span>Quality (-quality)</span><input id="video_quality" autocomplete="off"></label>
+                <label><span>Preset (-encoder_preset)</span><input id="video_encoder_preset" autocomplete="off" placeholder="medium / fast / p6"></label>
+                <label><span>Workers (-workers)</span><input id="video_parallel_workers" type="number" min="1" step="1"></label>
+              </div>
+              <div class="four-col">
+                <label><span>Speed (-speed)</span><input id="video_speed" autocomplete="off"></label>
+                <label><span>Skip (-skip)</span><input id="video_skip_frames" type="number" min="0" step="1"></label>
+                <label class="check-row"><input id="video_include_audio" type="checkbox"><span>Keep audio</span></label>
+                <label class="span-2"><span>Extra ffmpeg args</span><input id="video_extra_args" autocomplete="off" placeholder="-pix_fmt yuv420p"></label>
+              </div>
+              <div class="prep-actions">
+                <button id="normalizeVideoButton" class="secondary" title="Normalize videos into training/prepared/<project>-video with FFmpeg. Captions are copied beside normalized videos.">Normalize Video</button>
+                <button id="writeMusubiDatasetButton" class="secondary" title="Write Musubi video dataset TOML under training/output/<project>/configs. Also happens automatically on Save/Start.">Build TOML</button>
+                <button id="cacheMusubiTextButton" class="secondary" title="Run Musubi text encoder caching. Start also runs this automatically for LTX/WAN.">Cache Text</button>
+                <button id="cacheMusubiLatentsButton" class="secondary" title="Run Musubi latent caching. Start also runs this automatically for LTX/WAN after TOML changes, caption edits, or video changes.">Cache Latents</button>
+              </div>
+              <div class="muted-line">For LTX/WAN, image tag/resize is hidden. Start automatically normalizes videos when needed, rebuilds TOML, then caches text and latents before training.</div>
             </div>
-            <div class="muted-line">Tagging writes .txt captions beside the source images. Resize Copy writes a prepared copy under training/prepared.</div>
           </div>
         </section>
       </section>

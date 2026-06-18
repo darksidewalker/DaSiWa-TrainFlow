@@ -1,6 +1,10 @@
 package runtimeops
 
-import "testing"
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestFlashAttentionWheelURLUsesCUDAAndTorchABI(t *testing.T) {
 	info := torchCUDAInfo{
@@ -40,6 +44,31 @@ func TestTorchCUDAArchListSupportsThreeDigitArchitectures(t *testing.T) {
 	want := "8.9;12.0"
 	if got != want {
 		t.Fatalf("arch list = %q, want %q", got, want)
+	}
+}
+
+func TestUnifiedRuntimeMusubiPaths(t *testing.T) {
+	root := t.TempDir()
+
+	if got, want := musubiSourceDir(root), filepath.Join(root, "training", "musubi-tuner"); got != want {
+		t.Fatalf("musubi source dir = %q, want %q", got, want)
+	}
+	if got, want := musubiOverlayRequirementsPath(root), filepath.Join(root, "training", "requirements-musubi-overlay.txt"); got != want {
+		t.Fatalf("musubi overlay requirements path = %q, want %q", got, want)
+	}
+
+	pythonPath := musubiPythonPath(root)
+	for _, want := range []string{
+		filepath.Join(root, "training", "musubi-tuner", "src"),
+		filepath.Join(root, "training", "musubi-tuner"),
+		filepath.Join(root, "training", "sd-scripts"),
+	} {
+		if !strings.Contains(pythonPath, want) {
+			t.Fatalf("musubi python path %q does not contain %q", pythonPath, want)
+		}
+	}
+	if strings.Contains(pythonPath, ".venv") {
+		t.Fatalf("musubi python path must not reference a separate venv: %q", pythonPath)
 	}
 }
 
