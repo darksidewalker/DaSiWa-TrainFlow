@@ -1,6 +1,6 @@
 # DaSiWa TrainFlow
 
-DaSiWa TrainFlow is a portable Go shell for training LoRAs on Anima and SDXL-family models such as Pony and Illustrious. It wraps the existing Python/`sd-scripts` training stack with a modern embedded UI, clickable path pickers, dataset prep tools, resumable training, live preview refresh, and a compact hardware monitor for Linux and Windows.
+DaSiWa TrainFlow is a portable Go shell for training LoRAs on Anima, SDXL-family models such as Pony and Illustrious, and now video-training workflows for LTX 2.3 and Wan 2.2. It wraps the existing Python/`sd-scripts` stack with a modern embedded UI, clickable path pickers, dataset prep tools, Musubi video normalization, resumable training, live preview refresh, and a compact hardware monitor for Linux and Windows.
 
 ![TrainFlow preview](assets/DaSiWa-TrainFlow.webp)
 
@@ -125,16 +125,33 @@ dist/trainflow-runtime-tool-windows-amd64.exe
 2. Run `TrainFlow` or `TrainFlow.exe`.
 3. Choose the training profile: **Anima** or **SDXL / Pony / Illustrious**.
 4. Use the Browse buttons to select model files and dataset folders.
-5. Set trigger word, rank, optimizer, steps, and preview settings, or click **Auto Calc** for a profile-aware starting point.
-6. Click **Start**.
-7. Click **Quit** in the top bar when you want to terminate the local TrainFlow server.
+4. Choose the training profile: **Anima**, **SDXL / Pony / Illustrious**, or **LTX 2.3 / Wan 2.2** for Musubi video training.
+5. For LTX/WAN, use the video normalization controls to set FFmpeg/Musubi flags, then let TrainFlow generate the Musubi dataset TOML and cache text/latents automatically when you change parameters, captions, or source videos.
+6. Set trigger word, rank, optimizer, steps, and preview settings, or click **Auto Calc** for a profile-aware starting point.
+7. Click **Start**.
+8. Click **Quit** in the top bar when you want to terminate the local TrainFlow server.
+
+### LTX 2.3 / Wan 2.2 Musubi Video Training
+
+TrainFlow now includes a Musubi-focused workflow for LTX 2.3 and Wan 2.2:
+
+- The Dataset Prep area switches from image-specific prep to video normalization controls when you select LTX 2.3 or Wan 2.2.
+- The video normalizer exposes FFmpeg/Musubi flags such as width, height, FPS, duration, codec, quality, encoder preset, speed, skip frames, audio, and worker count.
+- TrainFlow auto-generates the Musubi dataset TOML when settings are saved or when the relevant prep actions run.
+- Changing video parameters, captions, source videos, or the scope/output path marks the Musubi cache as dirty so the pipeline rebuilds what it needs.
+- The canonical output/scope path is used for Musubi TOML, caches, and LoRA checkpoint output instead of a hardcoded output folder.
+- The LTX/WAN Start flow runs the full sequencer: normalize video → build TOML → cache text → cache latents → train.
+
+The Musubi video tooling uses the vendored fork under `training/musubi-tuner/`.
 
 ## Training Profiles
 
-TrainFlow keeps separate profile logic for Anima and SDXL-family training:
+TrainFlow keeps separate profile logic for Anima, SDXL / Pony / Illustrious, and LTX / Wan Musubi video training:
 
 - **Anima** uses the DiT, Qwen3 text encoder, and VAE paths, `networks.lora_anima`, 64px bucket steps, and Anima metadata.
 - **SDXL / Pony / Illustrious** uses a checkpoint path, `networks.lora`, 32px bucket steps, SDXL token settings, and SDXL-style UNet/text-encoder learning-rate fields.
+- **LTX / WAN Musubi video training** adds automatic TOML generation, video normalization controls, and pipeline sequencing for LTX 2.3 / Wan 2.2.
+- **Scope/output path routing** ensures the Musubi TOML, caches, and LoRA checkpoints use the selected output root instead of a hardcoded folder.
 
 **Auto Calc** reads the selected profile and dataset image count, then updates rank, learning rates, batch, gradient accumulation, training steps, save interval, and sample interval. It preserves the selected optimizer instead of switching the training path out from under you. Prodigy keeps Prodigy math (`learning_rate = 1.0`) and exports a constant scheduler; AdamW and AdamW8bit stay on the standard `1e-4` cosine path.
 
@@ -165,7 +182,7 @@ python training/sd-scripts/tools/anima_lora_metadata.py path/to/lora.safetensors
 
 - Single portable Go app with embedded HTML/CSS/JS; no separate web build step is needed.
 - Local browser UI at `http://127.0.0.1:7860`, with Linux and Windows binaries.
-- Profile switcher for **Anima** and **SDXL / Pony / Illustrious** training.
+- Profile switcher for **Anima**, **SDXL / Pony / Illustrious**, and **LTX 2.3 / Wan 2.2** training.
 - Profile-aware model path fields:
   - Anima: DiT, Qwen3 text encoder, and VAE.
   - SDXL: checkpoint plus optional VAE.
@@ -187,6 +204,9 @@ python training/sd-scripts/tools/anima_lora_metadata.py path/to/lora.safetensors
 ### Dataset Prep GUI
 
 - WD EVA02 ONNX caption/tagging button.
+- LTX 2.3 / Wan 2.2 video normalization controls that replace the image-only prep fields for Musubi workflows.
+- Automatic Musubi dataset TOML generation plus cache rebuild triggers when video parameters, captions, or source videos change.
+- Scope/output path control for Musubi configs, caches, and LoRA checkpoint output.
 - Resize-copy helper that writes prepared datasets under `training/prepared/<project>`.
 - Combined **Tag + Resize** workflow.
 - Configurable resize min/max side, general tag threshold, character tag threshold, and caption overwrite behavior.
