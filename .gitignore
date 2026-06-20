@@ -28,6 +28,10 @@ training/musubi-tuner/output/
 training/musubi-tuner/outputs/
 training/musubi-tuner/logs/
 models/*
+
+# Lowercase build artifacts (canonical binaries are TrainFlow, TrainFlow_Runtime_Tool)
+trainflow
+runtime-tool
 !models/.gitkeep
 
 # Distribution / packaging

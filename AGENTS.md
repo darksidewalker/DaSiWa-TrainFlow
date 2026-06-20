@@ -18,8 +18,8 @@ Use these checks before committing Go changes:
 
 ```bash
 go test ./...
-go build ./cmd/trainflow
-go build ./cmd/runtime-tool
+go build -o TrainFlow ./cmd/trainflow
+go build -o TrainFlow_Runtime_Tool ./cmd/runtime-tool
 ```
 
 Use `gofmt` on touched Go files. The project has no package manager step for the embedded web UI.

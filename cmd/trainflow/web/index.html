@@ -321,10 +321,22 @@
             </div>
             <div id="videoDatasetPrep" class="hidden">
               <div class="four-col">
-                <label><span>Width (-w)</span><input id="video_norm_width_proxy" type="number" min="64" step="16"></label>
-                <label><span>Height (-h)</span><input id="video_norm_height_proxy" type="number" min="64" step="16"></label>
+                <label class="span-2">
+                  <span>Resolution</span>
+                  <div class="res-selector">
+                    <select id="video_res_preset"></select>
+                    <button id="video_res_flip" class="icon-button" title="Flip aspect (swap width &amp; height)">⇄</button>
+                  </div>
+                </label>
                 <label><span>FPS (-fps)</span><input id="video_norm_fps_proxy" type="number" min="1" step="1"></label>
                 <label><span>Duration (-len)</span><input id="video_norm_duration_proxy" autocomplete="off"></label>
+              </div>
+              <div id="video_res_hint" class="muted-line"></div>
+              <div id="video_res_custom" class="hidden">
+                <div class="four-col">
+                  <label><span>Width (-w)</span><input id="video_norm_width_proxy" type="number" min="64" step="16"></label>
+                  <label><span>Height (-h)</span><input id="video_norm_height_proxy" type="number" min="64" step="16"></label>
+                </div>
               </div>
               <div class="four-col">
                 <label><span>Codec (-codec)</span><select id="video_codec"><option>libx264</option><option>libx265</option><option>h264_nvenc</option><option>hevc_nvenc</option><option>av1_nvenc</option></select></label>

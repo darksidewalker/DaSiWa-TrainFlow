@@ -160,6 +160,31 @@ const videoNormalizerProxyMap = {
   video_norm_duration_proxy: "video_duration"
 };
 const videoNormalizerProxies = Object.fromEntries(Object.keys(videoNormalizerProxyMap).map((id) => [id, document.getElementById(id)]));
+
+// Div32-aligned resolution presets for LTX-Video 2.3 / WAN 2.2
+// VRAM tiers: low = ~12-16GB (proxy/low-res), medium = ~24GB (balanced), high = ~32GB+ (max fidelity)
+const videoResPresetTable = [
+  { ratio: "16:9", type: "Cinematic Landscape", low: [768, 448], medium: [1024, 576], high: [1280, 704] },
+  { ratio: "9:16", type: "Social / Mobile Vertical", low: [448, 768], medium: [576, 1024], high: [704, 1280] },
+  { ratio: "4:3",  type: "Standard Landscape",    low: [640, 480], medium: [896, 672], high: [1024, 768] },
+  { ratio: "3:4",  type: "Portrait / Character",   low: [480, 640], medium: [672, 896], high: [768, 1024] },
+  { ratio: "1:1",  type: "Square / Subject Focus",  low: [512, 512], medium: [768, 768], high: [960, 960] },
+  { ratio: "21:9", type: "Ultrawide",               low: [768, 320], medium: [1024, 448], high: [1344, 576] },
+];
+const videoResPresets = [];
+for (const row of videoResPresetTable) {
+  for (const tier of ["low", "medium", "high"]) {
+    const [w, h] = row[tier];
+    videoResPresets.push({ label: `${w}×${h} (${row.ratio} ${row.type})`, w, h, vram: tier });
+  }
+}
+
+const videoResPreset = document.getElementById("video_res_preset");
+const videoResFlip = document.getElementById("video_res_flip");
+const videoResHint = document.getElementById("video_res_hint");
+const videoResCustom = document.getElementById("video_res_custom");
+
+let gpuVramMB = 0; // set from hardware stats
 const ditLabel = document.getElementById("ditLabel");
 const checkpointLabel = document.getElementById("checkpointLabel");
 const qwenLabel = document.getElementById("qwenLabel");
@@ -225,6 +250,12 @@ function syncVideoNormalizerProxiesFromSettings() {
     const source = els[sourceID];
     if (proxy && source) proxy.value = source.value;
   }
+  // Update resolution dropdown to match current settings
+  const w = els.video_width?.value;
+  const h = els.video_height?.value;
+  if (w && h) {
+    selectResPresetByValue(`${w}x${h}`);
+  }
 }
 
 function syncVideoNormalizerProxyToSetting(proxyID) {
@@ -234,6 +265,112 @@ function syncVideoNormalizerProxyToSetting(proxyID) {
   if (!proxy || !source) return;
   source.value = proxy.value;
   source.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+// --- Resolution selector helpers ---
+
+function populateResPresetDropdown() {
+  if (!videoResPreset) return;
+  videoResPreset.innerHTML = "";
+  const customOpt = document.createElement("option");
+  customOpt.value = "custom";
+  customOpt.textContent = "Custom…";
+  videoResPreset.appendChild(customOpt);
+
+  const groups = { "16:9 Widescreen": [], "3:4 Portrait": [], "4:3 Landscape": [], "9:16 Vertical": [], "1:1 Square": [], "21:9 Ultrawide": [] };
+  for (const p of videoResPresets) {
+    if (p.label.includes("16:9")) groups["16:9 Widescreen"].push(p);
+    else if (p.label.includes("21:9")) groups["21:9 Ultrawide"].push(p);
+    else if (p.label.includes("3:4")) groups["3:4 Portrait"].push(p);
+    else if (p.label.includes("4:3")) groups["4:3 Landscape"].push(p);
+    else if (p.label.includes("9:16")) groups["9:16 Vertical"].push(p);
+    else groups["1:1 Square"].push(p);
+  }
+  for (const [groupName, presets] of Object.entries(groups)) {
+    if (!presets.length) continue;
+    const og = document.createElement("optgroup");
+    og.label = groupName;
+    for (const p of presets) {
+      const opt = document.createElement("option");
+      opt.value = `${p.w}x${p.h}`;
+      opt.textContent = p.label;
+      opt.dataset.vram = p.vram;
+      og.appendChild(opt);
+    }
+    videoResPreset.appendChild(og);
+  }
+}
+
+function vramTier() {
+  if (gpuVramMB >= 16384) return "high";
+  if (gpuVramMB >= 12288) return "medium";
+  return "low";
+}
+
+function updateResHint() {
+  if (!videoResHint) return;
+  if (gpuVramMB === 0) {
+    videoResHint.textContent = "";
+    return;
+  }
+  const tier = vramTier();
+  const gb = Math.round(gpuVramMB / 1024);
+  const tierLabel = tier === "high" ? `${gb} GB — high-res OK` : tier === "medium" ? `${gb} GB — medium recommended` : `${gb} GB — low-res recommended`;
+  const recommended = videoResPresets.filter((p) => p.vram === tier);
+  const examples = recommended.map((p) => p.label.split(" ")[0]).join(", ");
+  videoResHint.textContent = `${tierLabel}: ${examples}`;
+}
+
+function selectResPresetByValue(value) {
+  if (!videoResPreset) return;
+  // Try to find matching preset
+  const match = videoResPresets.find((p) => `${p.w}x${p.h}` === value);
+  if (match) {
+    videoResPreset.value = value;
+    videoResCustom.classList.add("hidden");
+  } else {
+    videoResPreset.value = "custom";
+    videoResCustom.classList.remove("hidden");
+  }
+}
+
+function onResPresetChange() {
+  if (!videoResPreset) return;
+  const val = videoResPreset.value;
+  if (val === "custom") {
+    videoResCustom.classList.remove("hidden");
+    return;
+  }
+  videoResCustom.classList.add("hidden");
+  const [w, h] = val.split("x").map(Number);
+  els.video_width.value = w;
+  els.video_height.value = h;
+  syncVideoNormalizerProxiesFromSettings();
+  markMusubiCacheDirty("resolution changed");
+  queueSave();
+}
+
+function onResFlip() {
+  const w = Number(els.video_width.value);
+  const h = Number(els.video_height.value);
+  if (!w || !h) return;
+  els.video_width.value = h;
+  els.video_height.value = w;
+  syncVideoNormalizerProxiesFromSettings();
+  // After flip, the preset likely won't match, so show custom
+  selectResPresetByValue(`${h}x${w}`);
+  markMusubiCacheDirty("aspect flipped");
+  queueSave();
+}
+
+// When custom W/H inputs change, sync back and switch dropdown to "Custom"
+function onCustomResChange() {
+  syncVideoNormalizerProxyToSetting("video_norm_width_proxy");
+  syncVideoNormalizerProxyToSetting("video_norm_height_proxy");
+  videoResPreset.value = "custom";
+  videoResCustom.classList.remove("hidden");
+  markMusubiCacheDirty("resolution changed");
+  queueSave();
 }
 
 function setArchitecture(value, save = true) {
@@ -744,6 +881,11 @@ function renderHardware(data) {
         <div class="bar"><i style="width:${memPct}%"></i></div>
       </div>`;
     gpuList.append(card);
+    // Track first GPU VRAM for resolution suggestion
+    if (gpuVramMB === 0 && gpu.memTotal) {
+      gpuVramMB = gpu.memTotal;
+      updateResHint();
+    }
   }
 }
 
@@ -798,6 +940,20 @@ for (const [proxyID, proxy] of Object.entries(videoNormalizerProxies)) {
     syncVideoNormalizerProxyToSetting(proxyID);
     markMusubiCacheDirty("video normalizer parameter changed");
   });
+}
+
+// Resolution selector wiring
+if (videoResPreset) {
+  populateResPresetDropdown();
+  videoResPreset.addEventListener("change", onResPresetChange);
+}
+if (videoResFlip) {
+  videoResFlip.addEventListener("click", onResFlip);
+}
+// Custom W/H inputs sync back to settings
+for (const id of ["video_norm_width_proxy", "video_norm_height_proxy"]) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("change", onCustomResChange);
 }
 
 for (const button of architectureButtons) {

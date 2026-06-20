@@ -432,6 +432,28 @@ textarea:focus {
   margin-bottom: 8px;
 }
 
+.res-selector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.res-selector select {
+  flex: 1;
+  min-width: 0;
+}
+
+.res-selector .icon-button {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+#video_res_custom {
+  margin-top: 6px;
+}
+
 .preview-strip {
   min-height: calc(100vh - 118px);
 }
