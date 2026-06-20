@@ -163,19 +163,11 @@ func modelOverrides(root string) map[string]string {
 	if err != nil {
 		return nil
 	}
-	var settings struct {
-		DiTPath  string `json:"dit_path"`
-		QwenPath string `json:"qwen_path"`
-		VAEPath  string `json:"vae_path"`
-	}
+	var settings trainer.Settings
 	if err := json.Unmarshal(data, &settings); err != nil {
 		return nil
 	}
-	return map[string]string{
-		"dit_path":  settings.DiTPath,
-		"qwen_path": settings.QwenPath,
-		"vae_path":  settings.VAEPath,
-	}
+	return trainer.ModelOverrides(settings)
 }
 
 func (r *runner) broadcast() {

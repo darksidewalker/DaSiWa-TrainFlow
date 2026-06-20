@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"trainflow/internal/process"
 )
 
 type musubiCommandKind string
@@ -41,7 +43,7 @@ func musubiRoot(root string) string {
 func validateMusubiSource(root string) error {
 	base := musubiRoot(root)
 	for _, rel := range requiredMusubiFiles {
-		if !fileExists(filepath.Join(base, filepath.FromSlash(rel))) && !dirExists(filepath.Join(base, filepath.FromSlash(rel))) {
+		if !process.FileExists(filepath.Join(base, filepath.FromSlash(rel))) && !dirExists(filepath.Join(base, filepath.FromSlash(rel))) {
 			return fmt.Errorf("Musubi trainer source is missing from training/musubi-tuner (%s). Run scripts/sync-musubi-tuner.sh /home/darksidewalker/GitHub/musubi-tuner, then run Runtime Tool -> Install", rel)
 		}
 	}
@@ -152,7 +154,7 @@ func buildWAN22MusubiCommand(root string, kind musubiCommandKind, s Settings, da
 
 func newMusubiCommand(root string, args []string) musubiCommand {
 	return musubiCommand{
-		Program: pythonExecutable(root),
+		Program: process.PythonExecutable(root),
 		Args:    args,
 		Dir:     musubiRoot(root),
 		Env:     musubiTrainingEnv(root),

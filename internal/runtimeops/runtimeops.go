@@ -15,6 +15,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"trainflow/internal/process"
 )
 
 type Logger func(string)
@@ -73,7 +75,7 @@ func Verify(root string, log Logger) error {
 }
 
 func ensurePython(root string, log Logger) (string, error) {
-	python := pythonExecutable(root)
+	python := process.PythonExecutable(root)
 	if python != "" {
 		return python, nil
 	}
@@ -84,7 +86,7 @@ func ensurePython(root string, log Logger) (string, error) {
 	if err := installLinuxLocalPython(root, false, log); err != nil {
 		return "", err
 	}
-	python = pythonExecutable(root)
+	python = process.PythonExecutable(root)
 	if python == "" {
 		return "", errors.New("failed to create python_embeded runtime")
 	}
@@ -152,58 +154,110 @@ func sourceDirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
+// installOptionalFlashAttention tries several strategies in order to install
+// flash-attn: env-var wheel, official release wheel, community prebuilt, PyPI
+// prebuilt, and finally source build. Returns on the first success.
 func installOptionalFlashAttention(installer dependencyInstaller, log Logger) {
 	if runtime.GOOS == "windows" {
 		log("Skipping optional flash-attn install on Windows.")
 		return
 	}
+
 	info, infoErr := detectTorchCUDAInfo(installer.python)
 	if infoErr != nil {
 		log("Could not detect Torch/CUDA ABI for flash-attn wheel matching: " + infoErr.Error())
 	}
+
 	log("Installing optional Flash Attention support from a prebuilt wheel only...")
-	if wheelURL := strings.TrimSpace(os.Getenv("DASIWA_FLASH_ATTN_WHEEL_URL")); wheelURL != "" {
-		log("Trying Flash Attention wheel from DASIWA_FLASH_ATTN_WHEEL_URL...")
-		if err := installer.install(wheelURL); err == nil {
-			log("Installed Flash Attention wheel from DASIWA_FLASH_ATTN_WHEEL_URL.")
-			return
-		} else {
-			log("Flash Attention wheel URL failed: " + err.Error())
-		}
-	}
-	if infoErr == nil {
-		version := flashAttentionReleaseVersion(log)
-		wheelURL, wheelName := flashAttentionWheelURL(version, info)
-		log("Trying Flash Attention release wheel: " + wheelName)
-		if err := installer.install(wheelURL); err == nil {
-			log("Installed Flash Attention prebuilt release wheel.")
-			return
-		} else {
-			log("No compatible Flash Attention release wheel was found: " + err.Error())
-		}
-	}
-	if infoErr == nil {
-		candidate, err := findPrebuiltFlashAttentionWheel(info)
-		if err != nil {
-			log("Could not search flash-attention-prebuild-wheels releases: " + err.Error())
-		} else if candidate.URL != "" {
-			log("Trying community prebuilt Flash Attention wheel from " + candidate.Source + ": " + candidate.Name)
-			if err := installer.install(candidate.URL); err == nil {
-				log("Installed community prebuilt Flash Attention wheel.")
-				return
-			} else {
-				log("Community prebuilt Flash Attention wheel failed: " + err.Error())
-			}
-		} else {
-			log("No matching community prebuilt Flash Attention wheel was found.")
-		}
-	}
-	if err := installer.install("--only-binary=:all:", flashAttentionPyPIName); err == nil {
-		log("Installed Flash Attention prebuilt PyPI wheel.")
+
+	// Strategy 1: env-var wheel URL
+	if tryFlashEnvWheel(installer, log) {
 		return
-	} else {
-		log("No compatible prebuilt Flash Attention PyPI wheel was found: " + err.Error())
 	}
+
+	// Strategy 2: official release wheel
+	if infoErr == nil && tryFlashReleaseWheel(installer, info, log) {
+		return
+	}
+
+	// Strategy 3: community prebuilt wheel
+	if infoErr == nil && tryFlashCommunityWheel(installer, info, log) {
+		return
+	}
+
+	// Strategy 4: PyPI prebuilt wheel
+	if tryFlashPyPIWheel(installer, log) {
+		return
+	}
+
+	// Strategy 5: source build (last resort)
+	tryFlashSourceBuild(installer, info, infoErr, log)
+}
+
+// tryFlashEnvWheel installs from DASIWA_FLASH_ATTN_WHEEL_URL if set.
+func tryFlashEnvWheel(installer dependencyInstaller, log Logger) bool {
+	wheelURL := strings.TrimSpace(os.Getenv("DASIWA_FLASH_ATTN_WHEEL_URL"))
+	if wheelURL == "" {
+		return false
+	}
+	log("Trying Flash Attention wheel from DASIWA_FLASH_ATTN_WHEEL_URL...")
+	err := installer.install(wheelURL)
+	if err == nil {
+		log("Installed Flash Attention wheel from DASIWA_FLASH_ATTN_WHEEL_URL.")
+		return true
+	}
+	log("Flash Attention wheel URL failed: " + err.Error())
+	return false
+}
+
+// tryFlashReleaseWheel installs from an official Dao-AILab release.
+func tryFlashReleaseWheel(installer dependencyInstaller, info torchCUDAInfo, log Logger) bool {
+	version := flashAttentionReleaseVersion(log)
+	wheelURL, wheelName := flashAttentionWheelURL(version, info)
+	log("Trying Flash Attention release wheel: " + wheelName)
+	err := installer.install(wheelURL)
+	if err == nil {
+		log("Installed Flash Attention prebuilt release wheel.")
+		return true
+	}
+	log("No compatible Flash Attention release wheel was found: " + err.Error())
+	return false
+}
+
+// tryFlashCommunityWheel installs from a community prebuilt wheel release.
+func tryFlashCommunityWheel(installer dependencyInstaller, info torchCUDAInfo, log Logger) bool {
+	candidate, err := findPrebuiltFlashAttentionWheel(info)
+	if err != nil {
+		log("Could not search flash-attention-prebuild-wheels releases: " + err.Error())
+		return false
+	}
+	if candidate.URL == "" {
+		log("No matching community prebuilt Flash Attention wheel was found.")
+		return false
+	}
+	log("Trying community prebuilt Flash Attention wheel from " + candidate.Source + ": " + candidate.Name)
+	err = installer.install(candidate.URL)
+	if err == nil {
+		log("Installed community prebuilt Flash Attention wheel.")
+		return true
+	}
+	log("Community prebuilt Flash Attention wheel failed: " + err.Error())
+	return false
+}
+
+// tryFlashPyPIWheel installs a prebuilt wheel directly from PyPI.
+func tryFlashPyPIWheel(installer dependencyInstaller, log Logger) bool {
+	err := installer.install("--only-binary=:all:", flashAttentionPyPIName)
+	if err == nil {
+		log("Installed Flash Attention prebuilt PyPI wheel.")
+		return true
+	}
+	log("No compatible prebuilt Flash Attention PyPI wheel was found: " + err.Error())
+	return false
+}
+
+// tryFlashSourceBuild attempts a source build of flash-attn as a last resort.
+func tryFlashSourceBuild(installer dependencyInstaller, info torchCUDAInfo, infoErr error, log Logger) {
 	if info.CUDA != "" && isCUDA13(info.CUDA) {
 		log("CUDA " + info.CUDA + " detected. Skipping flash-attn source build for the CUDA 13.0 runtime; leave TrainFlow Flash Attention off and use the default torch/SDPA attention path.")
 		return
@@ -662,30 +716,6 @@ func cleanupBackup(backupDir string, keepBackup bool, success *bool, log Logger)
 	if err := os.RemoveAll(backupDir); err != nil {
 		log("Could not delete backup: " + err.Error())
 	}
-}
-
-func pythonExecutable(root string) string {
-	var candidates []string
-	if runtime.GOOS == "windows" {
-		candidates = []string{
-			filepath.Join(root, "python_embeded", "windows", "python.exe"),
-			filepath.Join(root, "python_embeded", "python.exe"),
-		}
-	} else {
-		candidates = []string{
-			filepath.Join(root, "python_embeded", "linux", "bin", "python"),
-			filepath.Join(root, "python_embeded", "linux", "bin", "python3"),
-			filepath.Join(root, "python_embeded", "bin", "python"),
-			filepath.Join(root, "python_embeded", "bin", "python3"),
-			filepath.Join(root, "python_embeded", "python"),
-		}
-	}
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
-		}
-	}
-	return ""
 }
 
 func uvExecutable(root string) string {

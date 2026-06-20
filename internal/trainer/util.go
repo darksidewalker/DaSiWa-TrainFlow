@@ -11,11 +11,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"trainflow/internal/process"
 )
 
 var projectNameRe = regexp.MustCompile(`[^a-zA-Z0-9]+`)
@@ -215,7 +216,7 @@ func validateSettings(s Settings) []string {
 		}
 		images = append(images, entry.Name())
 		stem := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
-		if !fileExists(filepath.Join(s.DatasetPath, stem+".txt")) {
+		if !process.FileExists(filepath.Join(s.DatasetPath, stem+".txt")) {
 			missingCaptions = append(missingCaptions, entry.Name())
 		}
 		path := filepath.Join(s.DatasetPath, entry.Name())
@@ -243,41 +244,9 @@ func validateSettings(s Settings) []string {
 	return errs
 }
 
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
-}
-
 func dirExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
-}
-
-func pythonExecutable(root string) string {
-	var candidates []string
-	if runtime.GOOS == "windows" {
-		candidates = []string{
-			filepath.Join(root, "python_embeded", "windows", "python.exe"),
-			filepath.Join(root, "python_embeded", "python.exe"),
-		}
-	} else {
-		candidates = []string{
-			filepath.Join(root, "python_embeded", "linux", "bin", "python3"),
-			filepath.Join(root, "python_embeded", "linux", "bin", "python"),
-			filepath.Join(root, "python_embeded", "bin", "python3"),
-			filepath.Join(root, "python_embeded", "bin", "python"),
-			filepath.Join(root, "python_embeded", "python"),
-		}
-	}
-	for _, candidate := range candidates {
-		if fileExists(candidate) {
-			return candidate
-		}
-	}
-	if runtime.GOOS == "windows" {
-		return "python"
-	}
-	return "python3"
 }
 
 func validatePythonRuntime(python string) error {

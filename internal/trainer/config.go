@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"trainflow/internal/process"
 )
 
 func createSamplePrompts(projectName string, s Settings, outDir string) (string, error) {
@@ -160,7 +162,7 @@ func writeAnimaTrainingTOML(content *strings.Builder, projectName string, s Sett
 
 func writeSDXLTrainingTOML(content *strings.Builder, projectName string, s Settings, outputDir, promptPath, scheduler string, optArgs []string) {
 	content.WriteString(fmt.Sprintf("pretrained_model_name_or_path = %s\n", tomlString(filepath.ToSlash(absPath(s.CheckpointPath)))))
-	if strings.TrimSpace(s.VAEPath) != "" && fileExists(s.VAEPath) {
+	if strings.TrimSpace(s.VAEPath) != "" && process.FileExists(s.VAEPath) {
 		content.WriteString(fmt.Sprintf("vae = %s\n", tomlString(filepath.ToSlash(absPath(s.VAEPath)))))
 	}
 	content.WriteString("network_module = \"networks.lora\"\n")

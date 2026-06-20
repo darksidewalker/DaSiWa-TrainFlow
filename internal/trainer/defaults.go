@@ -137,42 +137,7 @@ func applyStableDefaultsWithVRAM(s Settings, totalVRAMMB int) (Settings, string)
 	effectiveBatch := s.TrainBatchSize * s.GradientAccumulationSteps
 
 	if profile.Video && defaults.VideoTargetRepeats > 0 {
-		targetEpochs := s.TargetEpochs
-		if targetEpochs <= 0 {
-			targetEpochs = defaults.VideoTargetEpochs
-		}
-		s.VideoNumRepeats = recommendedVideoRepeats(imageCount, targetEpochs, s.TrainBatchSize, defaults)
-		if s.TargetEpochs <= 0 {
-			s.TargetEpochs = targetEpochs
-		}
-		effectiveVideoSteps := s.TargetEpochs * imageCount * s.VideoNumRepeats / maxInt(s.TrainBatchSize, 1)
-		steps := effectiveVideoSteps / maxInt(s.GradientAccumulationSteps, 1)
-		if steps < 1 {
-			steps = 1
-		}
-		s.TrainingSteps = steps
-		s.SaveSteps = recommendedVideoInterval(steps)
-		s.SampleSteps = recommendedVideoInterval(steps)
-		message := fmt.Sprintf(
-			"%s auto calc: %d videos, chose %d repeats/video x %d epochs = %d effective steps; batch %d x grad %d gives %d optimizer steps.",
-			profile.Label,
-			imageCount,
-			s.VideoNumRepeats,
-			s.TargetEpochs,
-			effectiveVideoSteps,
-			s.TrainBatchSize,
-			s.GradientAccumulationSteps,
-			s.TrainingSteps,
-		)
-		if defaults.VideoMinSteps > 0 && defaults.VideoMaxSteps > 0 {
-			message = fmt.Sprintf("%s Target window: %d-%d effective steps.", message, defaults.VideoMinSteps, defaults.VideoMaxSteps)
-		}
-		if totalVRAMMB > 0 {
-			message = fmt.Sprintf("%s VRAM target: %d%% of %d MB.", message, s.TargetVRAMPercent, totalVRAMMB)
-		} else {
-			message += " VRAM auto-detect unavailable; using safe batch defaults."
-		}
-		return s, message
+		return applyVideoDefaults(s, imageCount, profile, defaults, totalVRAMMB)
 	}
 
 	steps := int(math.Ceil(float64(imageCount*defaults.TargetRepeats) / float64(effectiveBatch)))
@@ -212,6 +177,48 @@ func recommendedBatchSize(profile trainingProfile, s Settings, totalVRAMMB int) 
 	targetMB := totalVRAMMB * s.TargetVRAMPercent / 100
 	batch := (targetMB - baseMB) / perBatchMB
 	return clampInt(batch, 1, maxBatch)
+}
+
+// applyVideoDefaults calculates video-specific training defaults
+// (repeats, epochs, steps, save/sample intervals) and returns a descriptive message.
+func applyVideoDefaults(s Settings, videoCount int, profile trainingProfile, defaults profileDefaults, totalVRAMMB int) (Settings, string) {
+	targetEpochs := s.TargetEpochs
+	if targetEpochs <= 0 {
+		targetEpochs = defaults.VideoTargetEpochs
+	}
+	s.VideoNumRepeats = recommendedVideoRepeats(videoCount, targetEpochs, s.TrainBatchSize, defaults)
+	if s.TargetEpochs <= 0 {
+		s.TargetEpochs = targetEpochs
+	}
+	effectiveVideoSteps := s.TargetEpochs * videoCount * s.VideoNumRepeats / maxInt(s.TrainBatchSize, 1)
+	steps := effectiveVideoSteps / maxInt(s.GradientAccumulationSteps, 1)
+	if steps < 1 {
+		steps = 1
+	}
+	s.TrainingSteps = steps
+	s.SaveSteps = recommendedVideoInterval(steps)
+	s.SampleSteps = recommendedVideoInterval(steps)
+
+	message := fmt.Sprintf(
+		"%s auto calc: %d videos, chose %d repeats/video x %d epochs = %d effective steps; batch %d x grad %d gives %d optimizer steps.",
+		profile.Label,
+		videoCount,
+		s.VideoNumRepeats,
+		s.TargetEpochs,
+		effectiveVideoSteps,
+		s.TrainBatchSize,
+		s.GradientAccumulationSteps,
+		s.TrainingSteps,
+	)
+	if defaults.VideoMinSteps > 0 && defaults.VideoMaxSteps > 0 {
+		message = fmt.Sprintf("%s Target window: %d-%d effective steps.", message, defaults.VideoMinSteps, defaults.VideoMaxSteps)
+	}
+	if totalVRAMMB > 0 {
+		message = fmt.Sprintf("%s VRAM target: %d%% of %d MB.", message, s.TargetVRAMPercent, totalVRAMMB)
+	} else {
+		message += " VRAM auto-detect unavailable; using safe batch defaults."
+	}
+	return s, message
 }
 
 func vramEstimate(profile trainingProfile, rank int) (baseMB, perBatchMB, maxBatch int) {

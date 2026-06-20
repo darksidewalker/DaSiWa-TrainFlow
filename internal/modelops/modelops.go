@@ -1,12 +1,16 @@
 package modelops
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
+
+	"trainflow/internal/process"
 )
 
 type Logger func(string)
@@ -18,6 +22,7 @@ type ModelFile struct {
 	Found    string `json:"found"`
 	URL      string `json:"url"`
 	Size     string `json:"size"`
+	Hash     string `json:"hash,omitempty"`
 	Optional bool   `json:"optional"`
 	OK       bool   `json:"ok"`
 }
@@ -109,12 +114,12 @@ func CheckWithOverrides(root string, overrides map[string]string) Status {
 	missing := 0
 	optionalMissing := 0
 	for i := range files {
-		files[i].OK = fileExists(files[i].Path)
+		files[i].OK = process.FileExistsNonEmpty(files[i].Path)
 		if files[i].OK {
 			files[i].Found = files[i].Path
 		}
 		if !files[i].Optional && files[i].Key != "" && overrides != nil {
-			if override := overrides[files[i].Key]; override != "" && fileExists(override) {
+			if override := overrides[files[i].Key]; override != "" && process.FileExistsNonEmpty(override) {
 				files[i].OK = true
 				files[i].Found = override
 			}
@@ -147,11 +152,11 @@ func CheckWithOverrides(root string, overrides map[string]string) Status {
 
 func DownloadRequired(root string, log Logger) error {
 	for _, file := range RequiredFiles(root) {
-		if fileExists(file.Path) {
+		if process.FileExistsNonEmpty(file.Path) {
 			log("Already present: " + file.Path)
 			continue
 		}
-		if err := download(log, file.URL, file.Path); err != nil {
+		if err := download(log, file.URL, file.Path, file.Hash); err != nil {
 			return err
 		}
 	}
@@ -160,18 +165,18 @@ func DownloadRequired(root string, log Logger) error {
 
 func DownloadOptional(root string, log Logger) error {
 	for _, file := range OptionalFiles(root) {
-		if fileExists(file.Path) {
+		if process.FileExistsNonEmpty(file.Path) {
 			log("Already present: " + file.Path)
 			continue
 		}
-		if err := download(log, file.URL, file.Path); err != nil {
+		if err := download(log, file.URL, file.Path, file.Hash); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func download(log Logger, url, path string) error {
+func download(log Logger, url, path, expectedHash string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
@@ -195,6 +200,7 @@ func download(log Logger, url, path string) error {
 	}
 	defer out.Close()
 
+	hash := sha256.New()
 	var written int64
 	buf := make([]byte, 1024*1024)
 	nextLog := time.Now().Add(10 * time.Second)
@@ -204,6 +210,7 @@ func download(log Logger, url, path string) error {
 			if _, err := out.Write(buf[:n]); err != nil {
 				return err
 			}
+			hash.Write(buf[:n])
 			written += int64(n)
 			if time.Now().After(nextLog) {
 				log(fmt.Sprintf("Downloaded %s for %s", formatBytes(written), filepath.Base(path)))
@@ -220,16 +227,20 @@ func download(log Logger, url, path string) error {
 	if err := out.Close(); err != nil {
 		return err
 	}
+
+	computedHash := hex.EncodeToString(hash.Sum(nil))
+	log(fmt.Sprintf("SHA-256: %s", computedHash))
+
+	if expectedHash != "" && computedHash != expectedHash {
+		_ = os.Remove(tempPath)
+		return fmt.Errorf("hash mismatch for %s: expected %s, got %s", filepath.Base(path), expectedHash, computedHash)
+	}
+
 	if err := os.Rename(tempPath, path); err != nil {
 		return err
 	}
 	log("Saved: " + path)
 	return nil
-}
-
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir() && info.Size() > 0
 }
 
 func formatBytes(value int64) string {

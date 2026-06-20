@@ -39,7 +39,7 @@ func TestProfileForVideoArchitectures(t *testing.T) {
 func TestBuildMusubiCommandsUseVendoredSourceAndSharedPython(t *testing.T) {
 	root := t.TempDir()
 	settings := normalizeSettings(Settings{
-		Architecture:    ArchitectureLTX23,
+		Architecture:   ArchitectureLTX23,
 		CheckpointPath: "/models/ltx.safetensors",
 		QwenPath:       "/models/gemma.safetensors",
 		ProjectName:    "ltx_project",

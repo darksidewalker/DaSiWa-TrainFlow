@@ -158,7 +158,7 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 		return StartResponse{OK: false, Message: err.Error()}, err
 	}
 
-	python := pythonExecutable(m.root)
+	python := process.PythonExecutable(m.root)
 	if err := validatePythonRuntime(python); err != nil {
 		return StartResponse{OK: false, Message: err.Error()}, err
 	}
@@ -386,7 +386,7 @@ func (m *Manager) startMusubiSequenced(s Settings, profile trainingProfile, proj
 	m.setPipelineStep("Text Cache")
 
 	// Step 3: Cache text encoder outputs
-	python := pythonExecutable(m.root)
+	python := process.PythonExecutable(m.root)
 	if err := validatePythonRuntime(python); err != nil {
 		cancel()
 		return StartResponse{OK: false, Message: err.Error()}, err
@@ -494,6 +494,9 @@ func (m *Manager) startMusubiSequenced(s Settings, profile trainingProfile, proj
 	return StartResponse{OK: true, Message: "Pipeline started.", Step: "training"}, nil
 }
 
+// StartDatasetPrep dispatches a dataset preparation action.
+// Supported actions: normalize-video, musubi-cache-text, musubi-cache-latents,
+// musubi-dataset-toml, tag, resize, all.
 func (m *Manager) StartDatasetPrep(action string, s Settings) (StartResponse, error) {
 	if err := m.SaveSettings(s); err != nil {
 		return StartResponse{OK: false, Message: err.Error()}, err
@@ -509,87 +512,107 @@ func (m *Manager) StartDatasetPrep(action string, s Settings) (StartResponse, er
 	if strings.TrimSpace(s.DatasetPath) == "" || !dirExists(s.DatasetPath) {
 		return StartResponse{OK: false, Message: "Dataset path not found: " + s.DatasetPath}, nil
 	}
-	if action == "normalize-video" {
-		profile := profileFor(s)
-		if profile.Family != trainingFamilyMusubi {
-			return StartResponse{OK: false, Message: "Video normalization is only supported for LTX 2.3 and Wan 2.2 architectures"}, nil
-		}
-		if _, err := exec.LookPath("ffmpeg"); err != nil {
-			return StartResponse{OK: false, Message: "ffmpeg not found in PATH; install ffmpeg before video normalization"}, nil
-		}
-		outputDir := preparedVideoDatasetPath(s.DatasetPath)
-		m.mu.Lock()
-		m.trainingCmd = nil
-		m.running = true
-		m.activeGPUs = map[string]string{"0": "video normalization"}
-		m.logLines = nil
-		m.mu.Unlock()
-		go m.runVideoNormalization(s, outputDir)
-		return StartResponse{OK: true, Message: "Video normalization started.", PreparedPath: filepath.ToSlash(absPath(outputDir)), Step: "normalize-video"}, nil
-	}
-	if action == "musubi-cache-text" || action == "musubi-cache-latents" {
-		profile := profileFor(s)
-		if profile.Family != trainingFamilyMusubi {
-			return StartResponse{OK: false, Message: "Musubi caching is only supported for LTX 2.3 and Wan 2.2 architectures"}, nil
-		}
-		if err := validatePythonRuntime(pythonExecutable(m.root)); err != nil {
-			return StartResponse{OK: false, Message: err.Error()}, err
-		}
-		if err := validateMusubiSource(m.root); err != nil {
-			return StartResponse{OK: false, Message: err.Error()}, err
-		}
-		projectName := projectNameForSettings(s)
-		projectOut := outputProject(m.root, s)
-		configDir := filepath.Join(projectOut, "configs")
-		if err := os.MkdirAll(configDir, 0755); err != nil {
-			return StartResponse{OK: false, Message: err.Error()}, err
-		}
-		datasetTOML, err := createMusubiDatasetTOML(projectName, s, profile, configDir)
-		if err != nil {
-			return StartResponse{OK: false, Message: err.Error()}, err
-		}
-		kind := musubiCommandCacheText
-		label := "text encoder cache"
-		step := "cache-text"
-		if action == "musubi-cache-latents" {
-			kind = musubiCommandCacheLatents
-			label = "latent cache"
-			step = "cache-latents"
-		}
-		spec, err := buildMusubiCommand(m.root, kind, s, datasetTOML, projectOut)
-		if err != nil {
-			return StartResponse{OK: false, Message: err.Error()}, err
-		}
-		return m.startCommandAsync(spec, label, step, "Musubi "+label+" started.")
-	}
-	if action == "musubi-dataset-toml" {
-		profile := profileFor(s)
-		if profile.Family != trainingFamilyMusubi {
-			return StartResponse{OK: false, Message: "Musubi dataset TOML is only supported for LTX 2.3 and Wan 2.2 architectures"}, nil
-		}
-		projectName := projectNameForSettings(s)
-		projectOut := outputProject(m.root, s)
-		configDir := filepath.Join(projectOut, "configs")
-		if err := os.MkdirAll(configDir, 0755); err != nil {
-			return StartResponse{OK: false, Message: err.Error()}, err
-		}
-		tomlPath, err := createMusubiDatasetTOML(projectName, s, profile, configDir)
-		if err != nil {
-			return StartResponse{OK: false, Message: err.Error()}, err
-		}
-		m.appendLog("Musubi dataset TOML generated: " + tomlPath)
-		return StartResponse{OK: true, PreparedPath: tomlPath, Message: "Dataset TOML generated."}, nil
-	}
-	if action != "tag" && action != "resize" && action != "all" {
+
+	switch action {
+	case "normalize-video":
+		return m.prepNormalizeVideo(s)
+	case "musubi-cache-text", "musubi-cache-latents":
+		return m.prepMusubiCache(action, s)
+	case "musubi-dataset-toml":
+		return m.prepMusubiDatasetTOML(s)
+	case "tag", "resize", "all":
+		return m.prepDataset(action, s)
+	default:
 		return StartResponse{OK: false, Message: "Unknown dataset prep action: " + action}, nil
 	}
+}
+
+// prepNormalizeVideo starts video normalization as a background goroutine.
+func (m *Manager) prepNormalizeVideo(s Settings) (StartResponse, error) {
+	profile := profileFor(s)
+	if profile.Family != trainingFamilyMusubi {
+		return StartResponse{OK: false, Message: "Video normalization is only supported for LTX 2.3 and Wan 2.2 architectures"}, nil
+	}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		return StartResponse{OK: false, Message: "ffmpeg not found in PATH; install ffmpeg before video normalization"}, nil
+	}
+	outputDir := preparedVideoDatasetPath(s.DatasetPath)
+	m.mu.Lock()
+	m.trainingCmd = nil
+	m.running = true
+	m.activeGPUs = map[string]string{"0": "video normalization"}
+	m.logLines = nil
+	m.mu.Unlock()
+	go m.runVideoNormalization(s, outputDir)
+	return StartResponse{OK: true, Message: "Video normalization started.", PreparedPath: filepath.ToSlash(absPath(outputDir)), Step: "normalize-video"}, nil
+}
+
+// prepMusubiCache starts a Musubi text-encoder or latent caching command asynchronously.
+func (m *Manager) prepMusubiCache(action string, s Settings) (StartResponse, error) {
+	profile := profileFor(s)
+	if profile.Family != trainingFamilyMusubi {
+		return StartResponse{OK: false, Message: "Musubi caching is only supported for LTX 2.3 and Wan 2.2 architectures"}, nil
+	}
+	if err := validatePythonRuntime(process.PythonExecutable(m.root)); err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	if err := validateMusubiSource(m.root); err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	projectName := projectNameForSettings(s)
+	projectOut := outputProject(m.root, s)
+	configDir := filepath.Join(projectOut, "configs")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	datasetTOML, err := createMusubiDatasetTOML(projectName, s, profile, configDir)
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	kind := musubiCommandCacheText
+	label := "text encoder cache"
+	step := "cache-text"
+	if action == "musubi-cache-latents" {
+		kind = musubiCommandCacheLatents
+		label = "latent cache"
+		step = "cache-latents"
+	}
+	spec, err := buildMusubiCommand(m.root, kind, s, datasetTOML, projectOut)
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	return m.startCommandAsync(spec, label, step, "Musubi "+label+" started.")
+}
+
+// prepMusubiDatasetTOML generates the Musubi dataset TOML file synchronously.
+func (m *Manager) prepMusubiDatasetTOML(s Settings) (StartResponse, error) {
+	profile := profileFor(s)
+	if profile.Family != trainingFamilyMusubi {
+		return StartResponse{OK: false, Message: "Musubi dataset TOML is only supported for LTX 2.3 and Wan 2.2 architectures"}, nil
+	}
+	projectName := projectNameForSettings(s)
+	projectOut := outputProject(m.root, s)
+	configDir := filepath.Join(projectOut, "configs")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	tomlPath, err := createMusubiDatasetTOML(projectName, s, profile, configDir)
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	m.appendLog("Musubi dataset TOML generated: " + tomlPath)
+	return StartResponse{OK: true, PreparedPath: tomlPath, Message: "Dataset TOML generated."}, nil
+}
+
+// prepDataset launches a tag/resize/all dataset preparation command asynchronously.
+func (m *Manager) prepDataset(action string, s Settings) (StartResponse, error) {
 	if action == "tag" || action == "all" {
 		if err := validatePrepModels(m.root); err != nil {
 			return StartResponse{OK: false, Message: err.Error()}, err
 		}
 	}
 
-	python := pythonExecutable(m.root)
+	python := process.PythonExecutable(m.root)
 	if err := validatePythonRuntime(python); err != nil {
 		return StartResponse{OK: false, Message: err.Error()}, err
 	}
@@ -710,6 +733,10 @@ func (m *Manager) appendLogLine(line string, replaceProgress bool) {
 	m.hub.BroadcastJSON("log", map[string]any{"logs": logs, "running": running})
 }
 
+// pipeLogs reads from a subprocess stream, filters blacklisted lines, appends
+// them to the training log, and broadcasts sample images whenever a log line
+// mentions "saved" or "sample". The sampleDir parameter is the directory where
+// the trainer writes sample images; pass "" for steps that don't produce images.
 func (m *Manager) pipeLogs(reader io.Reader, sampleDir string) {
 	scanner := bufio.NewScanner(reader)
 	scanner.Split(scanLogChunk)
@@ -721,7 +748,7 @@ func (m *Manager) pipeLogs(reader io.Reader, sampleDir string) {
 		}
 		m.appendTrainingLog(line)
 		lower := strings.ToLower(line)
-		if strings.Contains(lower, "saved") || strings.Contains(lower, "sample") {
+		if sampleDir != "" && (strings.Contains(lower, "saved") || strings.Contains(lower, "sample")) {
 			m.hub.BroadcastJSON("images", listLatestImages(sampleDir))
 		}
 	}
@@ -730,6 +757,10 @@ func (m *Manager) pipeLogs(reader io.Reader, sampleDir string) {
 	}
 }
 
+// waitForExit blocks until the subprocess exits, clears the running state,
+// logs the exit reason, and broadcasts the final sample images and training
+// state. The sampleDir parameter is the directory where the trainer writes
+// sample images; pass "" for steps that don't produce images.
 func (m *Manager) waitForExit(cmd *exec.Cmd, sampleDir string) {
 	err := cmd.Wait()
 	m.mu.Lock()
@@ -744,7 +775,9 @@ func (m *Manager) waitForExit(cmd *exec.Cmd, sampleDir string) {
 	} else {
 		m.appendLog("Process finished.")
 	}
-	m.hub.BroadcastJSON("images", listLatestImages(sampleDir))
+	if sampleDir != "" {
+		m.hub.BroadcastJSON("images", listLatestImages(sampleDir))
+	}
 	m.hub.BroadcastJSON("training_state", map[string]bool{"running": false})
 }
 
@@ -877,7 +910,7 @@ func validatePrepModels(root string) error {
 		filepath.Join(root, "models", "wd-eva02-large-tagger-v3", "selected_tags.csv"): false,
 	}
 	for _, file := range modelops.OptionalFiles(root) {
-		if _, ok := required[file.Path]; ok && fileExists(file.Path) {
+		if _, ok := required[file.Path]; ok && process.FileExists(file.Path) {
 			required[file.Path] = true
 		}
 	}

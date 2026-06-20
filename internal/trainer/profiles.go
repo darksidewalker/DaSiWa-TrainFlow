@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"trainflow/internal/process"
 )
 
 const (
@@ -241,34 +243,34 @@ func (p trainingProfile) validateModelPaths(s Settings) []string {
 	var errs []string
 	switch p.Architecture {
 	case ArchitectureSDXL:
-		if !fileExists(s.CheckpointPath) {
+		if !process.FileExists(s.CheckpointPath) {
 			errs = append(errs, "SDXL checkpoint file not found: "+s.CheckpointPath)
 		}
 	case ArchitectureLTX23:
-		if !fileExists(s.CheckpointPath) {
+		if !process.FileExists(s.CheckpointPath) {
 			errs = append(errs, "LTX 2.3 checkpoint file not found: "+s.CheckpointPath)
 		}
-		if !fileExists(s.QwenPath) {
+		if !process.FileExists(s.QwenPath) {
 			errs = append(errs, "Gemma text encoder file not found: "+s.QwenPath)
 		}
 	case ArchitectureWAN22:
-		if !fileExists(s.DiTPath) {
+		if !process.FileExists(s.DiTPath) {
 			errs = append(errs, "Wan DiT checkpoint file not found: "+s.DiTPath)
 		}
-		if !fileExists(s.QwenPath) {
+		if !process.FileExists(s.QwenPath) {
 			errs = append(errs, "Wan T5 text encoder file not found: "+s.QwenPath)
 		}
-		if !fileExists(s.VAEPath) {
+		if !process.FileExists(s.VAEPath) {
 			errs = append(errs, "Wan VAE file not found: "+s.VAEPath)
 		}
 	case ArchitectureAnima:
-		if !fileExists(s.DiTPath) {
+		if !process.FileExists(s.DiTPath) {
 			errs = append(errs, "DiT file not found: "+s.DiTPath)
 		}
-		if !fileExists(s.QwenPath) {
+		if !process.FileExists(s.QwenPath) {
 			errs = append(errs, "Qwen3 file not found: "+s.QwenPath)
 		}
-		if !fileExists(s.VAEPath) {
+		if !process.FileExists(s.VAEPath) {
 			errs = append(errs, "VAE file not found: "+s.VAEPath)
 		}
 	default:

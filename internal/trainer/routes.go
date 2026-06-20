@@ -209,7 +209,13 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 			http.NotFound(w, r)
 			return
 		}
-		path := filepath.Join(manager.root, "training", "output", parts[0], "sample", parts[1])
+		samplesRoot := filepath.Join(manager.root, "training", "output")
+		path := filepath.Join(samplesRoot, parts[0], "sample", parts[1])
+		path = filepath.Clean(path)
+		if !strings.HasPrefix(path, filepath.Clean(samplesRoot)+string(os.PathSeparator)) {
+			http.NotFound(w, r)
+			return
+		}
 		if info, err := os.Stat(path); err != nil || info.IsDir() {
 			http.NotFound(w, r)
 			return
@@ -230,7 +236,8 @@ func noCacheHandler(next http.Handler) http.Handler {
 	})
 }
 
-func modelOverrides(settings Settings) map[string]string {
+// ModelOverrides extracts the AniMa model path overrides from settings.
+func ModelOverrides(settings Settings) map[string]string {
 	return map[string]string{
 		"dit_path":  settings.DiTPath,
 		"qwen_path": settings.QwenPath,
@@ -242,7 +249,7 @@ func modelStatusForSettings(root string, settings Settings) modelops.Status {
 	settings = normalizeSettings(settings)
 	profile := profileFor(settings)
 	if profile.supportsManagedModelCheck() {
-		return modelops.CheckWithOverrides(root, modelOverrides(settings))
+		return modelops.CheckWithOverrides(root, ModelOverrides(settings))
 	}
 
 	files := []modelops.ModelFile{
@@ -251,7 +258,7 @@ func modelStatusForSettings(root string, settings Settings) modelops.Status {
 			Key:   "checkpoint_path",
 			Path:  settings.CheckpointPath,
 			Found: settings.CheckpointPath,
-			OK:    fileExists(settings.CheckpointPath),
+			OK:    process.FileExists(settings.CheckpointPath),
 		},
 	}
 	files = append(files, modelops.OptionalFiles(root)...)
@@ -262,7 +269,7 @@ func modelStatusForSettings(root string, settings Settings) modelops.Status {
 			continue
 		}
 		if files[i].Optional {
-			if fileExists(files[i].Path) {
+			if process.FileExists(files[i].Path) {
 				files[i].OK = true
 				files[i].Found = files[i].Path
 				continue
@@ -307,7 +314,7 @@ func runtimeStatus(root string) RuntimeStatus {
 		candidates = []string{filepath.Join(expected, "python.exe")}
 	}
 	for _, candidate := range candidates {
-		if fileExists(candidate) {
+		if process.FileExists(candidate) {
 			if err := validatePythonRuntime(candidate); err != nil {
 				return RuntimeStatus{
 					Ready:    false,
@@ -340,7 +347,7 @@ func openRuntimeTool(root string) error {
 		name += ".exe"
 	}
 	path := filepath.Join(root, name)
-	if !fileExists(path) {
+	if !process.FileExists(path) {
 		return fmt.Errorf("%s was not found beside TrainFlow", name)
 	}
 	cmd := exec.Command(path)
