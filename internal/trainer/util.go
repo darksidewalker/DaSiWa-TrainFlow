@@ -66,6 +66,10 @@ func outputProject(root string, s Settings) string {
 }
 
 func listLatestImages(dir string) []ImageItem {
+	return listLatestImagesTokened(dir, "")
+}
+
+func listLatestImagesTokened(dir string, token string) []ImageItem {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
@@ -84,7 +88,7 @@ func listLatestImages(dir string) []ImageItem {
 			continue
 		}
 		files = append(files, candidate{
-			item: sampleImageItem(dir, entry.Name()),
+			item: sampleImageItem(token, entry.Name()),
 			mod:  info.ModTime().UnixNano(),
 		})
 	}
@@ -96,10 +100,17 @@ func listLatestImages(dir string) []ImageItem {
 	return images
 }
 
-func sampleImageItem(dir, name string) ImageItem {
+func sampleImageItem(token, name string) ImageItem {
 	step := sampleStepFromName(name)
+	// Use token-based URL: /samples/<token>/<filename>
+	// The /samples/ route resolves the token to the actual sample directory.
+	slug := token
+	if slug == "" {
+		// Fallback for Status() call without token — use filename only
+		slug = "_"
+	}
 	item := ImageItem{
-		Src:  "/samples/" + filepath.ToSlash(filepath.Base(filepath.Dir(dir))) + "/" + name,
+		Src:  "/samples/" + slug + "/" + name,
 		Name: name,
 		Step: step,
 	}

@@ -189,7 +189,9 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 
 	mux.HandleFunc("/api/images", func(w http.ResponseWriter, r *http.Request) {
 		settings := manager.Settings()
-		writeJSON(w, listLatestImages(filepath.Join(outputProject(manager.root, settings), "sample")))
+		sampleDir := filepath.Join(outputProject(manager.root, settings), "sample")
+		token := manager.getSampleToken(sampleDir)
+		writeJSON(w, listLatestImagesTokened(sampleDir, token))
 	})
 
 	mux.HandleFunc("/api/path/list", func(w http.ResponseWriter, r *http.Request) {
@@ -209,10 +211,16 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 			http.NotFound(w, r)
 			return
 		}
-		samplesRoot := filepath.Join(manager.root, "training", "output")
-		path := filepath.Join(samplesRoot, parts[0], "sample", parts[1])
+		token := parts[0]
+		filename := parts[1]
+		sampleDir := manager.resolveSampleDir(token)
+		if sampleDir == "" {
+			http.NotFound(w, r)
+			return
+		}
+		path := filepath.Join(sampleDir, filename)
 		path = filepath.Clean(path)
-		if !strings.HasPrefix(path, filepath.Clean(samplesRoot)+string(os.PathSeparator)) {
+		if !strings.HasPrefix(path, filepath.Clean(sampleDir)+string(os.PathSeparator)) {
 			http.NotFound(w, r)
 			return
 		}

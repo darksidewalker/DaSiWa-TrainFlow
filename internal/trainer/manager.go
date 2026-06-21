@@ -23,25 +23,27 @@ import (
 const maxLogLines = 500
 
 type Manager struct {
-	root         string
-	hub          *Hub
-	mu           sync.Mutex
-	settings     Settings
-	trainingCmd  *exec.Cmd
-	running      bool
-	activeGPUs   map[string]string
-	logLines     []string
-	settingsPath string
+	root              string
+	hub               *Hub
+	mu                sync.Mutex
+	settings          Settings
+	trainingCmd       *exec.Cmd
+	running           bool
+	activeGPUs        map[string]string
+	logLines          []string
+	settingsPath      string
+	sampleDirRegistry map[string]string // URL token -> actual sample directory
 }
 
 func NewManager(root string, hub *Hub) *Manager {
 	_ = os.MkdirAll(filepath.Join(root, "training", "output"), 0755)
 	m := &Manager{
-		root:         root,
-		hub:          hub,
-		settings:     DefaultSettings(root),
-		activeGPUs:   make(map[string]string),
-		settingsPath: filepath.Join(root, "training", "settings.json"),
+		root:              root,
+		hub:               hub,
+		settings:          DefaultSettings(root),
+		activeGPUs:        make(map[string]string),
+		settingsPath:      filepath.Join(root, "training", "settings.json"),
+		sampleDirRegistry: make(map[string]string),
 	}
 	_ = m.LoadSettings()
 	return m
@@ -138,6 +140,7 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 			return StartResponse{OK: false, Message: err.Error()}, err
 		}
 	}
+	sampleToken := m.registerSampleDir(sampleDir)
 
 	profile := profileFor(s)
 	if profile.Family == trainingFamilyMusubi {
@@ -224,9 +227,9 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 		return StartResponse{OK: false, Message: err.Error()}, err
 	}
 
-	go m.pipeLogs(stdout, sampleDir)
-	go m.pipeLogs(stderr, sampleDir)
-	go m.waitForExit(cmd, sampleDir)
+	go m.pipeLogs(stdout, sampleToken)
+	go m.pipeLogs(stderr, sampleToken)
+	go m.waitForExit(cmd, sampleToken)
 	return StartResponse{OK: true, Message: "Training started."}, nil
 }
 
@@ -367,6 +370,8 @@ func (m *Manager) startMusubiSequenced(s Settings, profile trainingProfile, proj
 	m.logLines = nil
 	m.mu.Unlock()
 
+	sampleToken := m.registerSampleDir(sampleDir)
+
 	m.appendLog(fmt.Sprintf("Starting %s (%s) pipeline...", projectName, profile.Label))
 
 	// Use a cancellable context for the entire pipeline
@@ -479,9 +484,9 @@ func (m *Manager) startMusubiSequenced(s Settings, profile trainingProfile, proj
 		return StartResponse{OK: false, Message: err.Error()}, err
 	}
 
-	go m.pipeLogs(stdout, sampleDir)
-	go m.pipeLogs(stderr, sampleDir)
-	go m.waitForExit(cmd, sampleDir)
+	go m.pipeLogs(stdout, sampleToken)
+	go m.pipeLogs(stderr, sampleToken)
+	go m.waitForExit(cmd, sampleToken)
 	go func() {
 		<-ctx.Done()
 		m.mu.Lock()
@@ -701,11 +706,56 @@ func (m *Manager) ActiveGPUActivities() map[string]string {
 func (m *Manager) Status() map[string]any {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	sampleDir := filepath.Join(outputProject(m.root, m.settings), "sample")
+	// Find the active token for the current sample directory
+	var activeToken string
+	for token, dir := range m.sampleDirRegistry {
+		if dir == sampleDir {
+			activeToken = token
+			break
+		}
+	}
 	return map[string]any{
 		"running": m.running,
 		"logs":    strings.Join(m.logLines, "\n"),
-		"images":  listLatestImages(filepath.Join(outputProject(m.root, m.settings), "sample")),
+		"images":  listLatestImagesTokened(sampleDir, activeToken),
 	}
+}
+
+// registerSampleDir registers a sample directory and returns a URL token.
+// The token is used in image URLs so the /samples/ route can resolve the
+// actual filesystem path regardless of whether a custom output path is used.
+func (m *Manager) registerSampleDir(dir string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Reuse existing token if dir already registered
+	for token, existing := range m.sampleDirRegistry {
+		if existing == dir {
+			return token
+		}
+	}
+	token := fmt.Sprintf("s%d", len(m.sampleDirRegistry)+1)
+	m.sampleDirRegistry[token] = dir
+	return token
+}
+
+// resolveSampleDir looks up a URL token and returns the actual sample directory.
+func (m *Manager) resolveSampleDir(token string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.sampleDirRegistry[token]
+}
+
+// getSampleToken returns the registered token for a sample directory, or "" if unregistered.
+func (m *Manager) getSampleToken(dir string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for token, d := range m.sampleDirRegistry {
+		if d == dir {
+			return token
+		}
+	}
+	return ""
 }
 
 func (m *Manager) appendLog(line string) {
@@ -735,9 +785,9 @@ func (m *Manager) appendLogLine(line string, replaceProgress bool) {
 
 // pipeLogs reads from a subprocess stream, filters blacklisted lines, appends
 // them to the training log, and broadcasts sample images whenever a log line
-// mentions "saved" or "sample". The sampleDir parameter is the directory where
-// the trainer writes sample images; pass "" for steps that don't produce images.
-func (m *Manager) pipeLogs(reader io.Reader, sampleDir string) {
+// mentions "saved" or "sample". The sampleToken parameter is a URL token that
+// maps to the actual sample directory; pass "" for steps that don't produce images.
+func (m *Manager) pipeLogs(reader io.Reader, sampleToken string) {
 	scanner := bufio.NewScanner(reader)
 	scanner.Split(scanLogChunk)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -748,8 +798,9 @@ func (m *Manager) pipeLogs(reader io.Reader, sampleDir string) {
 		}
 		m.appendTrainingLog(line)
 		lower := strings.ToLower(line)
-		if sampleDir != "" && (strings.Contains(lower, "saved") || strings.Contains(lower, "sample")) {
-			m.hub.BroadcastJSON("images", listLatestImages(sampleDir))
+		if sampleToken != "" && (strings.Contains(lower, "saved") || strings.Contains(lower, "sample")) {
+			sampleDir := m.resolveSampleDir(sampleToken)
+			m.hub.BroadcastJSON("images", listLatestImagesTokened(sampleDir, sampleToken))
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -759,9 +810,9 @@ func (m *Manager) pipeLogs(reader io.Reader, sampleDir string) {
 
 // waitForExit blocks until the subprocess exits, clears the running state,
 // logs the exit reason, and broadcasts the final sample images and training
-// state. The sampleDir parameter is the directory where the trainer writes
-// sample images; pass "" for steps that don't produce images.
-func (m *Manager) waitForExit(cmd *exec.Cmd, sampleDir string) {
+// state. The sampleToken parameter is a URL token that maps to the actual
+// sample directory; pass "" for steps that don't produce images.
+func (m *Manager) waitForExit(cmd *exec.Cmd, sampleToken string) {
 	err := cmd.Wait()
 	m.mu.Lock()
 	if m.trainingCmd == cmd {
@@ -775,8 +826,9 @@ func (m *Manager) waitForExit(cmd *exec.Cmd, sampleDir string) {
 	} else {
 		m.appendLog("Process finished.")
 	}
-	if sampleDir != "" {
-		m.hub.BroadcastJSON("images", listLatestImages(sampleDir))
+	if sampleToken != "" {
+		sampleDir := m.resolveSampleDir(sampleToken)
+		m.hub.BroadcastJSON("images", listLatestImagesTokened(sampleDir, sampleToken))
 	}
 	m.hub.BroadcastJSON("training_state", map[string]bool{"running": false})
 }

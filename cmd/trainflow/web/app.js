@@ -496,6 +496,24 @@ async function saveSettings() {
   }
 }
 
+async function loadSettings() {
+  try {
+    const settings = await api("/api/settings");
+    applySettings(settings);
+  } catch (err) {
+    // silent — settings load is best-effort
+  }
+}
+
+async function refreshImages() {
+  try {
+    const status = await api("/api/status");
+    renderGallery(status.images);
+  } catch (err) {
+    // silent — image refresh is best-effort
+  }
+}
+
 async function autoCalculateTraining() {
   autoCalcButton.disabled = true;
   try {
@@ -528,9 +546,20 @@ function markMusubiCacheDirty(reason = "video dataset settings changed") {
 async function startTraining() {
   setRunning(true);
   try {
+    // Explicit save before start — ensures output_path and other changes
+    // are persisted even if the debounce hasn't fired yet.
+    const settings = collectSettings();
+    try {
+      await api("/api/settings", {
+        method: "POST",
+        body: JSON.stringify(settings)
+      });
+    } catch (saveErr) {
+      // Non-fatal — backend also saves on start
+    }
     const resp = await api("/api/train/start", {
       method: "POST",
-      body: JSON.stringify(collectSettings())
+      body: JSON.stringify(settings)
     });
     setStatus(resp.message, resp.ok);
     if (resp.ok) musubiCacheDirty = false;
@@ -838,7 +867,15 @@ function connectWS() {
       setRunning(Boolean(msg.data.running));
     }
     if (msg.type === "images") renderGallery(msg.data);
-    if (msg.type === "training_state") setRunning(Boolean(msg.data.running));
+    if (msg.type === "training_state") {
+      setRunning(Boolean(msg.data.running));
+      // Refresh settings and gallery when training stops so the UI
+      // reflects the saved output_path and latest sample images.
+      if (!msg.data.running) {
+        loadSettings();
+        refreshImages();
+      }
+    }
   });
 }
 
