@@ -878,6 +878,7 @@ func datasetResizeArgs(root string, s Settings) []string {
 	script := `
 import shutil
 import sys
+import re
 from pathlib import Path
 from PIL import Image, ImageOps
 
@@ -890,6 +891,9 @@ image_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 output_dir.mkdir(parents=True, exist_ok=True)
 input_dir.mkdir(parents=True, exist_ok=True)
 
+def natural_key(path):
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", path.name)]
+
 for child in list(src.iterdir()):
     if child.name == input_dir.name or not child.is_file():
         continue
@@ -899,11 +903,11 @@ for child in list(src.iterdir()):
             raise RuntimeError(f"Refusing to overwrite existing input file while preparing dataset: {target}")
         shutil.move(str(child), str(target))
 
-images = sorted([p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() in image_exts], key=lambda p: p.name.lower())
+images = sorted([p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() in image_exts], key=natural_key)
 captions_by_stem = {p.stem: p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() == ".txt"}
 image_stems = {p.stem for p in images}
 missing_captions = [p.name for p in images if p.stem not in captions_by_stem]
-orphan_captions = sorted([p.name for stem, p in captions_by_stem.items() if stem not in image_stems], key=str.lower)
+orphan_captions = [p.name for p in sorted(captions_by_stem.values(), key=natural_key) if p.stem not in image_stems]
 if missing_captions or orphan_captions:
     problems = []
     if missing_captions:
@@ -927,7 +931,7 @@ for index, image_path in enumerate(images, 1):
     caption_src = captions_by_stem[image_path.stem]
     caption_dst = output_dir / f"{base}.txt"
     shutil.copy2(caption_src, caption_dst)
-    print(f"Prepared {image_path.name} -> {out_image.name} ({new_width}x{new_height}); caption -> {caption_dst.name}", flush=True)
+    print(f"Prepared {image_path.name} + {caption_src.name} -> {out_image.name} + {caption_dst.name} ({new_width}x{new_height})", flush=True)
 
 print(f"Dataset prep complete. Originals are in: {input_dir}", flush=True)
 print(f"Prepared numbered images/captions are in: {output_dir}", flush=True)

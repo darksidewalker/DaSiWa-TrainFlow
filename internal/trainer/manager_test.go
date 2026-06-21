@@ -198,9 +198,17 @@ func TestDatasetResizePrepKeepsExactCaptionPairsWhenRenumbering(t *testing.T) {
 	if err := os.MkdirAll(dataset, 0755); err != nil {
 		t.Fatal(err)
 	}
-	writeTestPNG(t, filepath.Join(dataset, "zebra.png"), 64, 32)
-	writeTestPNG(t, filepath.Join(dataset, "apple.png"), 32, 64)
-	if err := os.WriteFile(filepath.Join(dataset, "zebra.txt"), []byte("caption for zebra"), 0644); err != nil {
+	writeTestPNG(t, filepath.Join(dataset, "1.png"), 64, 32)
+	writeTestPNG(t, filepath.Join(dataset, "2.png"), 32, 64)
+	writeTestPNG(t, filepath.Join(dataset, "10.png"), 64, 64)
+	writeTestPNG(t, filepath.Join(dataset, "apple.png"), 32, 32)
+	if err := os.WriteFile(filepath.Join(dataset, "1.txt"), []byte("caption for one"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataset, "2.txt"), []byte("caption for two"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataset, "10.txt"), []byte("caption for ten"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dataset, "apple.txt"), []byte("caption for apple"), 0644); err != nil {
@@ -219,15 +227,29 @@ func TestDatasetResizePrepKeepsExactCaptionPairsWhenRenumbering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(firstCaption) != "caption for apple" {
-		t.Fatalf("1.txt = %q, want apple caption matching sorted apple.png", firstCaption)
+	if string(firstCaption) != "caption for one" {
+		t.Fatalf("1.txt = %q, want caption matching 1.png", firstCaption)
 	}
 	secondCaption, err := os.ReadFile(filepath.Join(dataset, "2.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(secondCaption) != "caption for zebra" {
-		t.Fatalf("2.txt = %q, want zebra caption matching sorted zebra.png", secondCaption)
+	if string(secondCaption) != "caption for two" {
+		t.Fatalf("2.txt = %q, want caption matching 2.png before 10.png", secondCaption)
+	}
+	thirdCaption, err := os.ReadFile(filepath.Join(dataset, "3.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(thirdCaption) != "caption for ten" {
+		t.Fatalf("3.txt = %q, want caption matching 10.png after 2.png", thirdCaption)
+	}
+	fourthCaption, err := os.ReadFile(filepath.Join(dataset, "4.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(fourthCaption) != "caption for apple" {
+		t.Fatalf("4.txt = %q, want caption matching apple.png", fourthCaption)
 	}
 }
 
