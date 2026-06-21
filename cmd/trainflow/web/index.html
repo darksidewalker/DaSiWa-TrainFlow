@@ -296,17 +296,19 @@
                   <input id="side_min" type="number" min="64" step="64">
                 </label>
                 <label class="span-2">
-                  <span>Resolution preset (max side fit)</span>
-                  <input id="side_max" type="number" min="64" step="16" list="image_resolution_presets" placeholder="240">
-                  <datalist id="image_resolution_presets">
-                    <option value="240" label="240p"></option>
-                    <option value="360" label="360p"></option>
-                    <option value="480" label="480p"></option>
-                    <option value="576" label="576p"></option>
-                    <option value="720" label="720p"></option>
-                    <option value="768" label="768p"></option>
-                    <option value="1024" label="1024p"></option>
-                  </datalist>
+                  <span>Resize preset (max side fit)</span>
+                  <select id="side_max" title="Fit every image inside this max side while preserving the original aspect ratio.">
+                    <optgroup label="ANIMA / character LoRA">
+                      <option value="512">512p — fast drafts / small datasets</option>
+                      <option value="640">640p — balanced ANIMA prep</option>
+                      <option value="768">768p — quality ANIMA prep</option>
+                    </optgroup>
+                    <optgroup label="SDXL / Pony / Illustrious">
+                      <option value="768">768p — low VRAM SDXL prep</option>
+                      <option value="896">896p — balanced SDXL prep</option>
+                      <option value="1024">1024p — native SDXL prep</option>
+                    </optgroup>
+                  </select>
                 </label>
                 <label>
                   <span>General</span>
@@ -326,7 +328,7 @@
                 <button id="resizeDatasetButton" class="secondary" title="Move originals into Dataset Path/input, then write aspect-preserving numbered images and captions directly in the selected dataset folder.">Resize Copy</button>
                 <button id="prepDatasetButton" class="primary" title="Run caption tagging first, then move originals into input and write aspect-preserving numbered images/captions in the selected dataset folder.">Tag + Resize</button>
               </div>
-              <div class="muted-line">Resize prep fits each image inside the selected max side without crop/morph. Originals move to input/; numbered images and captions are written in this dataset folder. Training uses bucketed resolutions/aspects.</div>
+              <div class="muted-line">Resize prep fits each image inside the selected max side without crop/morph. Choose 512-768p for ANIMA and 768-1024p for SDXL/Pony/Illustrious. Originals move to input/; numbered images and captions are written in this dataset folder. Training uses bucketed resolutions/aspects.</div>
             </div>
             <div id="videoDatasetPrep" class="hidden">
               <div class="four-col">
