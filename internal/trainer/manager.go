@@ -895,10 +895,23 @@ for child in list(src.iterdir()):
         continue
     if child.suffix.lower() in image_exts or child.suffix.lower() == ".txt":
         target = input_dir / child.name
-        if not target.exists():
-            shutil.move(str(child), str(target))
+        if target.exists():
+            raise RuntimeError(f"Refusing to overwrite existing input file while preparing dataset: {target}")
+        shutil.move(str(child), str(target))
 
 images = sorted([p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() in image_exts], key=lambda p: p.name.lower())
+captions_by_stem = {p.stem: p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() == ".txt"}
+image_stems = {p.stem for p in images}
+missing_captions = [p.name for p in images if p.stem not in captions_by_stem]
+orphan_captions = sorted([p.name for stem, p in captions_by_stem.items() if stem not in image_stems], key=str.lower)
+if missing_captions or orphan_captions:
+    problems = []
+    if missing_captions:
+        problems.append("images without exact same-name .txt captions: " + ", ".join(missing_captions))
+    if orphan_captions:
+        problems.append(".txt captions without exact same-name images: " + ", ".join(orphan_captions))
+    raise RuntimeError("Dataset prep requires exact image/caption filename pairs before renumbering; " + "; ".join(problems))
+
 for index, image_path in enumerate(images, 1):
     base = str(index)
     with Image.open(image_path) as image:
@@ -911,12 +924,9 @@ for index, image_path in enumerate(images, 1):
             image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
         out_image = output_dir / f"{base}.jpg"
         image.save(out_image, quality=95, subsampling=0)
-    caption_src = input_dir / (image_path.stem + ".txt")
+    caption_src = captions_by_stem[image_path.stem]
     caption_dst = output_dir / f"{base}.txt"
-    if caption_src.exists():
-        shutil.copy2(caption_src, caption_dst)
-    elif not caption_dst.exists():
-        caption_dst.write_text("", encoding="utf-8")
+    shutil.copy2(caption_src, caption_dst)
     print(f"Prepared {image_path.name} -> {out_image.name} ({new_width}x{new_height}); caption -> {caption_dst.name}", flush=True)
 
 print(f"Dataset prep complete. Originals are in: {input_dir}", flush=True)

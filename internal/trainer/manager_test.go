@@ -184,6 +184,106 @@ func TestDatasetResizePrepPreservesAspectAndWritesInDataset(t *testing.T) {
 	}
 }
 
+func TestDatasetResizePrepKeepsExactCaptionPairsWhenRenumbering(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not available")
+	}
+	if err := exec.Command(python, "-c", "from PIL import Image").Run(); err != nil {
+		t.Skip("Pillow not available")
+	}
+
+	root := t.TempDir()
+	dataset := filepath.Join(root, "dataset")
+	if err := os.MkdirAll(dataset, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestPNG(t, filepath.Join(dataset, "zebra.png"), 64, 32)
+	writeTestPNG(t, filepath.Join(dataset, "apple.png"), 32, 64)
+	if err := os.WriteFile(filepath.Join(dataset, "zebra.txt"), []byte("caption for zebra"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataset, "apple.txt"), []byte("caption for apple"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	settings := DefaultSettings(root)
+	settings.DatasetPath = dataset
+	settings.SideMax = 64
+	cmd := exec.Command(python, datasetResizeArgs(root, settings)...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("resize prep failed: %v\n%s", err, out)
+	}
+
+	firstCaption, err := os.ReadFile(filepath.Join(dataset, "1.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(firstCaption) != "caption for apple" {
+		t.Fatalf("1.txt = %q, want apple caption matching sorted apple.png", firstCaption)
+	}
+	secondCaption, err := os.ReadFile(filepath.Join(dataset, "2.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(secondCaption) != "caption for zebra" {
+		t.Fatalf("2.txt = %q, want zebra caption matching sorted zebra.png", secondCaption)
+	}
+}
+
+func TestDatasetResizePrepRejectsMismatchedCaptionPairs(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not available")
+	}
+	if err := exec.Command(python, "-c", "from PIL import Image").Run(); err != nil {
+		t.Skip("Pillow not available")
+	}
+
+	root := t.TempDir()
+	dataset := filepath.Join(root, "dataset")
+	if err := os.MkdirAll(dataset, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestPNG(t, filepath.Join(dataset, "image.png"), 64, 64)
+	if err := os.WriteFile(filepath.Join(dataset, "wrong.txt"), []byte("wrong caption"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	settings := DefaultSettings(root)
+	settings.DatasetPath = dataset
+	settings.SideMax = 64
+	cmd := exec.Command(python, datasetResizeArgs(root, settings)...)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected resize prep to reject mismatched image/caption names; output:\n%s", out)
+	}
+	if !strings.Contains(string(out), "exact image/caption filename pairs") {
+		t.Fatalf("expected exact-pairing error, got:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(dataset, "1.txt")); !os.IsNotExist(err) {
+		t.Fatalf("mismatched prep must not write numbered caption, stat err: %v", err)
+	}
+}
+
+func writeTestPNG(t *testing.T, path string, width, height int) {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			img.Set(x, y, color.RGBA{R: 128, G: 64, B: 32, A: 255})
+		}
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if err := png.Encode(file, img); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSaveSettingsWritesMusubiDatasetTOML(t *testing.T) {
 	root := t.TempDir()
 	dataset := filepath.Join(root, "videos")
