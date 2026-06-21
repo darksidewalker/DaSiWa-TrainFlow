@@ -69,14 +69,59 @@ func UpdateAppBinaries(root string, log Logger) error {
 	if _, err := exec.LookPath("git"); err != nil {
 		return errors.New("git was not found on PATH; install git or update app binaries manually")
 	}
+	remoteURL, err := publicGitRemoteURL(root, log)
+	if err != nil {
+		return err
+	}
 	log("Updating TrainFlow source from git...")
-	if err := run(log, root, "git", "pull", "--ff-only"); err != nil {
+	if err := run(log, root, "git", "pull", "--ff-only", remoteURL, currentGitBranch(root, log)); err != nil {
 		return err
 	}
 	if err := buildAppBinaries(root, log); err != nil {
 		return err
 	}
 	return nil
+}
+
+func publicGitRemoteURL(root string, log Logger) (string, error) {
+	remoteURL, err := gitOutput(root, "remote", "get-url", "origin")
+	if err != nil || strings.TrimSpace(remoteURL) == "" {
+		log("Could not read git origin URL; using public TrainFlow repository URL.")
+		return "https://github.com/darksidewalker/DaSiWa-TrainFlow.git", nil
+	}
+	remoteURL = strings.TrimSpace(remoteURL)
+	if strings.HasPrefix(remoteURL, "git@github.com:") {
+		path := strings.TrimPrefix(remoteURL, "git@github.com:")
+		return "https://github.com/" + path, nil
+	}
+	if strings.HasPrefix(remoteURL, "ssh://git@github.com/") {
+		path := strings.TrimPrefix(remoteURL, "ssh://git@github.com/")
+		return "https://github.com/" + path, nil
+	}
+	if strings.HasPrefix(remoteURL, "https://github.com/") || strings.HasPrefix(remoteURL, "http://github.com/") {
+		return remoteURL, nil
+	}
+	log("Git origin is not a GitHub URL; using public TrainFlow repository URL instead of origin: " + remoteURL)
+	return "https://github.com/darksidewalker/DaSiWa-TrainFlow.git", nil
+}
+
+func currentGitBranch(root string, log Logger) string {
+	branch, err := gitOutput(root, "branch", "--show-current")
+	if err != nil || strings.TrimSpace(branch) == "" {
+		log("Could not detect current git branch; using main.")
+		return "main"
+	}
+	return strings.TrimSpace(branch)
+}
+
+func gitOutput(root string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
 
 func buildAppBinaries(root string, log Logger) error {

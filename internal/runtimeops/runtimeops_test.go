@@ -2,6 +2,7 @@ package runtimeops
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -96,6 +97,45 @@ func TestPathExists(t *testing.T) {
 	}
 	if !pathExists(path) {
 		t.Fatalf("pathExists(%q) = false after file exists", path)
+	}
+}
+
+func TestPublicGitRemoteURLConvertsGitHubSSHToHTTPS(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	root := t.TempDir()
+	runGitForTest(t, root, "init")
+	runGitForTest(t, root, "remote", "add", "origin", "git@github.com:darksidewalker/DaSiWa-TrainFlow.git")
+
+	got, err := publicGitRemoteURL(root, func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://github.com/darksidewalker/DaSiWa-TrainFlow.git"
+	if got != want {
+		t.Fatalf("publicGitRemoteURL = %q, want %q", got, want)
+	}
+}
+
+func TestCurrentGitBranchFallsBackToMain(t *testing.T) {
+	root := t.TempDir()
+	var logs []string
+	got := currentGitBranch(root, func(line string) { logs = append(logs, line) })
+	if got != "main" {
+		t.Fatalf("currentGitBranch = %q, want main", got)
+	}
+	if len(logs) != 1 || !strings.Contains(logs[0], "using main") {
+		t.Fatalf("logs = %q, want fallback message", logs)
+	}
+}
+
+func runGitForTest(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, out)
 	}
 }
 
