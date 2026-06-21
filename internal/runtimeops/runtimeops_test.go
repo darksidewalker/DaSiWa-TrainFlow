@@ -1,6 +1,7 @@
 package runtimeops
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -69,6 +70,32 @@ func TestUnifiedRuntimeMusubiPaths(t *testing.T) {
 	}
 	if strings.Contains(pythonPath, ".venv") {
 		t.Fatalf("musubi python path must not reference a separate venv: %q", pythonPath)
+	}
+}
+
+func TestUpdateAppBinariesSkipsNonGitCheckout(t *testing.T) {
+	root := t.TempDir()
+	var logs []string
+	err := UpdateAppBinaries(root, func(line string) { logs = append(logs, line) })
+	if err != nil {
+		t.Fatalf("UpdateAppBinaries returned error for non-git checkout: %v", err)
+	}
+	if len(logs) != 1 || !strings.Contains(logs[0], "not a git checkout") {
+		t.Fatalf("logs = %q, want non-git checkout skip message", logs)
+	}
+}
+
+func TestPathExists(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "file.txt")
+	if pathExists(path) {
+		t.Fatalf("pathExists(%q) = true before file exists", path)
+	}
+	if err := os.WriteFile(path, []byte("ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if !pathExists(path) {
+		t.Fatalf("pathExists(%q) = false after file exists", path)
 	}
 }
 

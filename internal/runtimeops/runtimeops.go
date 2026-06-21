@@ -46,6 +46,9 @@ func InstallRequirements(root string, installFlashAttention bool, log Logger) er
 }
 
 func UpdateRuntime(root string, keepBackup bool, installFlashAttention bool, log Logger) error {
+	if err := UpdateAppBinaries(root, log); err != nil {
+		return err
+	}
 	if runtime.GOOS == "windows" {
 		if err := installWindowsEmbeddedPython(root, keepBackup, log); err != nil {
 			return err
@@ -56,6 +59,48 @@ func UpdateRuntime(root string, keepBackup bool, installFlashAttention bool, log
 		}
 	}
 	return InstallRequirements(root, installFlashAttention, log)
+}
+
+func UpdateAppBinaries(root string, log Logger) error {
+	if !sourceDirExists(filepath.Join(root, ".git")) {
+		log("Skipping app binary update; this folder is not a git checkout.")
+		return nil
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		return errors.New("git was not found on PATH; install git or update app binaries manually")
+	}
+	log("Updating TrainFlow source from git...")
+	if err := run(log, root, "git", "pull", "--ff-only"); err != nil {
+		return err
+	}
+	if err := buildAppBinaries(root, log); err != nil {
+		return err
+	}
+	return nil
+}
+
+func buildAppBinaries(root string, log Logger) error {
+	script := filepath.Join(root, "build.sh")
+	if runtime.GOOS == "windows" {
+		script = filepath.Join(root, "build.ps1")
+		if !pathExists(script) {
+			return errors.New("build.ps1 was not found; cannot rebuild app binaries")
+		}
+		if _, err := exec.LookPath("powershell"); err == nil {
+			log("Rebuilding TrainFlow root and dist binaries...")
+			return run(log, root, "powershell", "-ExecutionPolicy", "Bypass", "-File", script)
+		}
+		if _, err := exec.LookPath("pwsh"); err == nil {
+			log("Rebuilding TrainFlow root and dist binaries...")
+			return run(log, root, "pwsh", "-ExecutionPolicy", "Bypass", "-File", script)
+		}
+		return errors.New("PowerShell was not found on PATH; cannot rebuild app binaries")
+	}
+	if !pathExists(script) {
+		return errors.New("build.sh was not found; cannot rebuild app binaries")
+	}
+	log("Rebuilding TrainFlow root and dist binaries...")
+	return run(log, root, "bash", script)
 }
 
 func Verify(root string, log Logger) error {
@@ -152,6 +197,11 @@ func musubiPythonPath(root string) string {
 func sourceDirExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // installOptionalFlashAttention tries several strategies in order to install
