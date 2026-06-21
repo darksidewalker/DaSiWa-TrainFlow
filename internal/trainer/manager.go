@@ -869,28 +869,74 @@ func datasetTagArgs(root string, s Settings) []string {
 }
 
 func datasetResizeArgs(root string, s Settings) []string {
-	profile := profileFor(normalizeSettings(s))
 	maxSide := s.SideMax
 	if maxSide <= 0 {
 		maxSide = 768
 	}
-	resolution := fmt.Sprintf("%dx%d", maxSide, maxSide)
+	inputDir := preparedDatasetInputPath(s)
+	outputDir := preparedDatasetPath(root, s)
+	script := `
+import shutil
+import sys
+from pathlib import Path
+from PIL import Image, ImageOps
+
+src = Path(sys.argv[1]).resolve()
+input_dir = Path(sys.argv[2]).resolve()
+output_dir = Path(sys.argv[3]).resolve()
+max_side = int(sys.argv[4])
+
+image_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+output_dir.mkdir(parents=True, exist_ok=True)
+input_dir.mkdir(parents=True, exist_ok=True)
+
+for child in list(src.iterdir()):
+    if child.name == input_dir.name or not child.is_file():
+        continue
+    if child.suffix.lower() in image_exts or child.suffix.lower() == ".txt":
+        target = input_dir / child.name
+        if not target.exists():
+            shutil.move(str(child), str(target))
+
+images = sorted([p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() in image_exts], key=lambda p: p.name.lower())
+for index, image_path in enumerate(images, 1):
+    base = str(index)
+    with Image.open(image_path) as image:
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        width, height = image.size
+        scale = min(1.0, max_side / max(width, height))
+        new_width = max(1, round(width * scale))
+        new_height = max(1, round(height * scale))
+        if (new_width, new_height) != image.size:
+            image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        out_image = output_dir / f"{base}.jpg"
+        image.save(out_image, quality=95, subsampling=0)
+    caption_src = input_dir / (image_path.stem + ".txt")
+    caption_dst = output_dir / f"{base}.txt"
+    if caption_src.exists():
+        shutil.copy2(caption_src, caption_dst)
+    elif not caption_dst.exists():
+        caption_dst.write_text("", encoding="utf-8")
+    print(f"Prepared {image_path.name} -> {out_image.name} ({new_width}x{new_height}); caption -> {caption_dst.name}", flush=True)
+
+print(f"Dataset prep complete. Originals are in: {input_dir}", flush=True)
+print(f"Prepared numbered images/captions are in: {output_dir}", flush=True)
+`
 	return []string{
-		filepath.Join(root, "training", "sd-scripts", "tools", "resize_images_to_resolution.py"),
+		"-c", script,
 		filepath.ToSlash(absPath(s.DatasetPath)),
-		filepath.ToSlash(absPath(preparedDatasetPath(root, s))),
-		"--max_resolution", resolution,
-		"--divisible_by", strconv.Itoa(profile.ResizeDivisor),
-		"--copy_associated_files",
+		filepath.ToSlash(absPath(inputDir)),
+		filepath.ToSlash(absPath(outputDir)),
+		strconv.Itoa(maxSide),
 	}
 }
 
 func preparedDatasetPath(root string, s Settings) string {
-	name := projectNameForSettings(s)
-	if name == "untitled" {
-		name = sanitizeProjectName(filepath.Base(strings.TrimRight(s.DatasetPath, string(os.PathSeparator))))
-	}
-	return filepath.Join(root, "training", "prepared", name)
+	return filepath.Clean(s.DatasetPath)
+}
+
+func preparedDatasetInputPath(s Settings) string {
+	return filepath.Join(filepath.Clean(s.DatasetPath), "input")
 }
 
 func datasetPrepLabel(action string) string {

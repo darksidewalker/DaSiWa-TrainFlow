@@ -2,7 +2,12 @@ package trainer
 
 import (
 	"bufio"
+	"image"
+	"image/color"
+	_ "image/jpeg"
+	"image/png"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -110,6 +115,72 @@ func TestBuildNormalizeVideoCommandUsesConfigurableFlags(t *testing.T) {
 	}
 	if strings.Contains(joined, " -an ") {
 		t.Fatalf("audio should be preserved when VideoIncludeAudio=true: %q", joined)
+	}
+}
+
+func TestDatasetResizePrepPreservesAspectAndWritesInDataset(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not available")
+	}
+	if err := exec.Command(python, "-c", "from PIL import Image").Run(); err != nil {
+		t.Skip("Pillow not available")
+	}
+
+	root := t.TempDir()
+	dataset := filepath.Join(root, "dataset")
+	if err := os.MkdirAll(dataset, 0755); err != nil {
+		t.Fatal(err)
+	}
+	img := image.NewRGBA(image.Rect(0, 0, 800, 400))
+	for y := 0; y < 400; y++ {
+		for x := 0; x < 800; x++ {
+			img.Set(x, y, color.RGBA{R: 128, G: 64, B: 32, A: 255})
+		}
+	}
+	imagePath := filepath.Join(dataset, "wide.png")
+	imageFile, err := os.Create(imagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(imageFile, img); err != nil {
+		_ = imageFile.Close()
+		t.Fatal(err)
+	}
+	if err := imageFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataset, "wide.txt"), []byte("caption"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	settings := DefaultSettings(root)
+	settings.DatasetPath = dataset
+	settings.SideMax = 240
+	args := datasetResizeArgs(root, settings)
+	cmd := exec.Command(python, args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("resize prep failed: %v\n%s", err, out)
+	}
+
+	if _, err := os.Stat(filepath.Join(dataset, "input", "wide.png")); err != nil {
+		t.Fatalf("expected original moved to input folder: %v", err)
+	}
+	preparedCaption := filepath.Join(dataset, "1.txt")
+	if _, err := os.Stat(preparedCaption); err != nil {
+		t.Fatalf("expected numbered caption in dataset folder: %v", err)
+	}
+	prepared, err := os.Open(filepath.Join(dataset, "1.jpg"))
+	if err != nil {
+		t.Fatalf("expected numbered image in dataset folder: %v", err)
+	}
+	decoded, _, err := image.Decode(prepared)
+	_ = prepared.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := decoded.Bounds().Size(); got.X != 240 || got.Y != 120 {
+		t.Fatalf("expected aspect-preserving 240x120 output, got %dx%d", got.X, got.Y)
 	}
 }
 

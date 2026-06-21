@@ -54,7 +54,7 @@ func TestApplyStableDefaultsAnimaTypicalDataset(t *testing.T) {
 	if next.TrainingSteps != 1150 {
 		t.Fatalf("expected rounded Anima steps near 1100, got %d (%s)", next.TrainingSteps, message)
 	}
-	if next.NetworkRank != 32 || next.Optimizer != "AdamW8bit" || next.LearningRate != "1e-4" {
+	if next.NetworkRank != 32 || next.Optimizer != "Prodigy" || next.LearningRate != "1.0" {
 		t.Fatalf("unexpected Anima defaults: %+v", next)
 	}
 	if next.TrainBatchSize != 1 || next.GradientAccumulationSteps != 1 {
@@ -73,7 +73,7 @@ func TestApplyStableDefaultsSDXLTypicalDataset(t *testing.T) {
 	if next.TrainingSteps != 1800 {
 		t.Fatalf("expected SDXL 1800 steps, got %d (%s)", next.TrainingSteps, message)
 	}
-	if next.NetworkRank != 32 || next.Optimizer != "AdamW8bit" || next.UNetLR != "1e-4" || next.TextEncoderLR1 != "1e-5" {
+	if next.NetworkRank != 32 || next.Optimizer != "Prodigy" || next.UNetLR != "1e-4" || next.TextEncoderLR1 != "1e-5" {
 		t.Fatalf("unexpected SDXL defaults: %+v", next)
 	}
 	if !next.TrainUNetOnly {

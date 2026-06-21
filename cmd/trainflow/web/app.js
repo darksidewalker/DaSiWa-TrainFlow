@@ -394,7 +394,6 @@ function setArchitecture(value, save = true) {
     checkpointLabel.textContent = "SDXL Checkpoint";
     qwenLabel.textContent = "Qwen3";
     vaeLabel.textContent = "VAE (optional)";
-    if (save && (!els.optimizer.value || els.optimizer.value === "Prodigy")) els.optimizer.value = "AdamW8bit";
   } else if (architecture === "ltx23") {
     checkpointLabel.textContent = "LTX 2.3 Checkpoint";
     qwenLabel.textContent = "Gemma Text Encoder";
@@ -418,8 +417,7 @@ function setArchitecture(value, save = true) {
 
 function applyVideoDefaults(architecture, save) {
   if (!save) return;
-  els.optimizer.value = "Prodigy";
-  els.learning_rate.value = "1.0";
+  if (!els.optimizer.value) els.optimizer.value = "Prodigy";
   if (!els.network_rank.value || els.network_rank.value === "32") els.network_rank.value = 128;
   els.network_alpha.value = 1;
   els.mixed_precision.value = els.mixed_precision.value || "bf16";

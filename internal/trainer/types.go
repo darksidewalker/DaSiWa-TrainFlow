@@ -107,7 +107,7 @@ func DefaultSettings(root string) Settings {
 		UNetLR:                    "1e-4",
 		TextEncoderLR1:            "1e-5",
 		TextEncoderLR2:            "1e-5",
-		Optimizer:                 "AdamW8bit",
+		Optimizer:                 "Prodigy",
 		TrainingSteps:             1100,
 		SaveSteps:                 100,
 		SampleSteps:               100,
