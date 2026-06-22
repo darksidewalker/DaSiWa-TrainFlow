@@ -224,9 +224,9 @@ func resolveResumePath(s Settings, outputDir string) string {
 	if !s.AutoResume && strings.TrimSpace(s.ResumePath) != "" {
 		return strings.TrimSpace(s.ResumePath)
 	}
-	if strings.TrimSpace(s.ResumePath) != "" && dirExists(strings.TrimSpace(s.ResumePath)) {
-		return strings.TrimSpace(s.ResumePath)
-	}
+	// AutoResume: search for the latest *-state dir inside the output folder.
+	// Do NOT fall back to ResumePath here — it may be a stale default (e.g. home dir)
+	// that is a valid directory but not a training checkpoint.
 	return findLastStateDir(outputDir)
 }
 

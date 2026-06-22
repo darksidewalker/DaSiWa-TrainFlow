@@ -126,7 +126,7 @@ func DefaultSettings(root string) Settings {
 		FlashAttention:            false,
 		ResumeEnabled:             false,
 		AutoResume:                true,
-		ResumePath:                home,
+		ResumePath:                "",
 		SideMin:                   512,
 		SideMax:                   768,
 		TaggerGenThreshold:        0.35,
