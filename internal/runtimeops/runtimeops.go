@@ -32,6 +32,12 @@ const (
 	flashAttentionMinBuildMemoryBytes   = uint64(96 * 1024 * 1024 * 1024)
 	flashAttentionDefaultReleaseVersion = "2.8.3"
 	flashAttentionPrebuildReleasesAPI   = "https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases?per_page=100"
+
+	// pythonStandaloneReleasesAPI points to the astral-sh/python-build-standalone
+	// repo (formerly indygreg). Tags are date-based (e.g. 20260610) and asset
+	// names encode the Python version — we must query the API to resolve a
+	// working download URL.
+	pythonStandaloneReleasesAPI = "https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=1"
 )
 
 func InstallRequirements(root string, installFlashAttention bool, log Logger) error {
@@ -785,6 +791,50 @@ func installWindowsEmbeddedPython(root string, keepBackup bool, log Logger) erro
 	return nil
 }
 
+// fetchStandalonePythonURL queries the astral-sh/python-build-standalone
+// GitHub releases API and returns the download URL for the latest x86_64
+// Linux gnu install_only tarball, along with the resolved Python version.
+func fetchStandalonePythonURL() (url, version string) {
+	req, err := http.NewRequest(http.MethodGet, pythonStandaloneReleasesAPI, nil)
+	if err != nil {
+		return "", ""
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "DaSiWa-TrainFlow")
+	client := http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", ""
+	}
+	var releases []struct {
+		Assets []struct {
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return "", ""
+	}
+	if len(releases) == 0 || len(releases[0].Assets) == 0 {
+		return "", ""
+	}
+	for _, asset := range releases[0].Assets {
+		name := asset.Name
+		if strings.HasSuffix(name, "x86_64-unknown-linux-gnu-install_only.tar.gz") &&
+			strings.HasPrefix(name, "cpython-3.12.") {
+			// Extract version from asset name: cpython-3.12.XX+YYYYMMDD-...
+			prefix := strings.TrimPrefix(name, "cpython-")
+			ver := strings.Split(prefix, "+")[0]
+			return asset.BrowserDownloadURL, ver
+		}
+	}
+	return "", ""
+}
+
 func installLinuxLocalPython(root string, keepBackup bool, log Logger) error {
 	pythonDir := platformRuntimeDir(root)
 	var backupDir string
@@ -806,15 +856,22 @@ func installLinuxLocalPython(root string, keepBackup bool, log Logger) error {
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return err
 	}
-	tarPath := filepath.Join(tempDir, "python-"+pythonVersion+".tar.gz")
-	pythonURL := "https://github.com/indygreg/python-build-standalone/releases/download/" + pythonVersion + "/cpython-" + pythonVersion + "+" + "x86_64-unknown-linux-gnu-install_only.tar.gz"
 
-	log("Downloading standalone Python " + pythonVersion + "...")
+	pythonURL, resolvedVersion := fetchStandalonePythonURL()
+	if pythonURL == "" {
+		return errors.New("could not resolve standalone Python download URL; check network connectivity and try again")
+	}
+	log("Resolved standalone Python " + resolvedVersion + " from GitHub releases.")
+
+	tarName := filepath.Base(pythonURL)
+	tarPath := filepath.Join(tempDir, tarName)
+
+	log("Downloading standalone Python " + resolvedVersion + "...")
 	if err := download(log, pythonURL, tarPath); err != nil {
 		return err
 	}
 
-	log("Extracting Python " + pythonVersion + "...")
+	log("Extracting Python " + resolvedVersion + "...")
 	if err := untarGz(tarPath, pythonDir); err != nil {
 		return err
 	}
@@ -841,16 +898,22 @@ func installLinuxLocalPython(root string, keepBackup bool, log Logger) error {
 	}
 
 	// Ensure bin/python symlink exists
-	pythonBin := filepath.Join(pythonDir, "bin", "python"+pythonVersion[0:3])
+	pythonMinor := strings.ReplaceAll(resolvedVersion, ".", "")
+	pythonBin := filepath.Join(pythonDir, "bin", "python"+pythonMinor)
 	pythonLink := filepath.Join(pythonDir, "bin", "python")
 	if _, err := os.Stat(pythonLink); err != nil {
-		if err := os.Symlink("python"+pythonVersion[0:3], pythonLink); err != nil {
+		if err := os.Symlink("python"+pythonMinor, pythonLink); err != nil {
 			return err
 		}
 	}
 
+	// Standalone Python does not ship with pip — install via get-pip.py
+	getPipPath := filepath.Join(tempDir, "get-pip.py")
+	if err := download(log, "https://bootstrap.pypa.io/get-pip.py", getPipPath); err != nil {
+		return err
+	}
 	log("Bootstrapping pip in local runtime...")
-	if err := run(log, root, pythonBin, "-m", "ensurepip", "--upgrade"); err != nil {
+	if err := run(log, root, pythonBin, getPipPath); err != nil {
 		return err
 	}
 	success = true
