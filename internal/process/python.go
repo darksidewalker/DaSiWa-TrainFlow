@@ -22,6 +22,7 @@ func FileExistsNonEmpty(path string) bool {
 
 // PythonExecutable returns the path to the embedded Python interpreter,
 // or "" if none is found in the given root directory.
+// No system Python fallback — the runtime must be self-contained.
 func PythonExecutable(root string) string {
 	var candidates []string
 	if runtime.GOOS == "windows" {
@@ -43,8 +44,5 @@ func PythonExecutable(root string) string {
 			return candidate
 		}
 	}
-	if runtime.GOOS == "windows" {
-		return "python"
-	}
-	return "python3"
+	return ""
 }

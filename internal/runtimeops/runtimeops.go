@@ -1,8 +1,10 @@
 package runtimeops
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bufio"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -73,10 +75,30 @@ func UpdateAppBinaries(root string, log Logger) error {
 	if err != nil {
 		return err
 	}
+	branch := currentGitBranch(root, log)
+
+	// Stash local changes so git pull won't abort on modified files.
+	stashed := false
+	if err := run(log, root, "git", "stash", "--keep-index", "--include-untracked"); err == nil {
+		stashed = true
+	} else {
+		log("git stash failed (may be clean working tree); continuing with pull.")
+	}
+
 	log("Updating TrainFlow source from git...")
-	if err := run(log, root, "git", "pull", "--ff-only", remoteURL, currentGitBranch(root, log)); err != nil {
+	if err := run(log, root, "git", "pull", "--ff-only", remoteURL, branch); err != nil {
+		if stashed {
+			run(log, root, "git", "stash", "pop")
+		}
 		return err
 	}
+
+	if stashed {
+		if err := run(log, root, "git", "stash", "pop"); err != nil {
+			log("git stash pop failed after pull (likely conflicts); stashed changes remain in stash.")
+		}
+	}
+
 	if err := buildAppBinaries(root, log); err != nil {
 		return err
 	}
@@ -186,7 +208,7 @@ func ensurePython(root string, log Logger) (string, error) {
 func installTrainerDeps(root string, installer dependencyInstaller, installFlashAttention bool, log Logger) error {
 	sdScriptsDir := filepath.Join(root, "training", "sd-scripts")
 	log("Upgrading pip, setuptools, and wheel...")
-	if err := installer.install("--upgrade", "pip", "setuptools", "wheel"); err != nil {
+	if err := installer.install("--upgrade", "pip", "setuptools<82", "wheel"); err != nil {
 		return err
 	}
 	req := filepath.Join(sdScriptsDir, "requirements.txt")
@@ -775,20 +797,60 @@ func installLinuxLocalPython(root string, keepBackup bool, log Logger) error {
 	}
 	success := false
 	defer cleanupBackup(backupDir, keepBackup, &success, log)
-	if err := os.MkdirAll(filepath.Dir(pythonDir), 0755); err != nil {
+	if err := os.MkdirAll(pythonDir, 0755); err != nil {
 		return err
 	}
-	basePython := findCommand("python3.12", "python3")
-	if basePython == "" {
-		return errors.New("python3.12 or python3 was not found on PATH; install Python 3.12 first")
-	}
-	log("Creating Linux local runtime with " + basePython)
-	if err := run(log, root, basePython, "-m", "venv", pythonDir); err != nil {
+
+	// Download standalone Python from GitHub releases (pre-built, no system python3 needed)
+	tempDir := filepath.Join(root, ".runtime-update")
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return err
 	}
-	python := filepath.Join(pythonDir, "bin", "python")
+	tarPath := filepath.Join(tempDir, "python-"+pythonVersion+".tar.gz")
+	pythonURL := "https://github.com/indygreg/python-build-standalone/releases/download/" + pythonVersion + "/cpython-" + pythonVersion + "+" + "x86_64-unknown-linux-gnu-install_only.tar.gz"
+
+	log("Downloading standalone Python " + pythonVersion + "...")
+	if err := download(log, pythonURL, tarPath); err != nil {
+		return err
+	}
+
+	log("Extracting Python " + pythonVersion + "...")
+	if err := untarGz(tarPath, pythonDir); err != nil {
+		return err
+	}
+
+	// The standalone Python lands in pythonDir/<subdir>/ — flatten it
+	entries, err := os.ReadDir(pythonDir)
+	if err != nil {
+		return err
+	}
+	if len(entries) == 1 && entries[0].IsDir() {
+		subDir := filepath.Join(pythonDir, entries[0].Name())
+		subEntries, err := os.ReadDir(subDir)
+		if err != nil {
+			return err
+		}
+		for _, entry := range subEntries {
+			src := filepath.Join(subDir, entry.Name())
+			dst := filepath.Join(pythonDir, entry.Name())
+			if err := os.Rename(src, dst); err != nil {
+				return err
+			}
+		}
+		os.RemoveAll(subDir)
+	}
+
+	// Ensure bin/python symlink exists
+	pythonBin := filepath.Join(pythonDir, "bin", "python"+pythonVersion[0:3])
+	pythonLink := filepath.Join(pythonDir, "bin", "python")
+	if _, err := os.Stat(pythonLink); err != nil {
+		if err := os.Symlink("python"+pythonVersion[0:3], pythonLink); err != nil {
+			return err
+		}
+	}
+
 	log("Bootstrapping pip in local runtime...")
-	if err := run(log, root, python, "-m", "ensurepip", "--upgrade"); err != nil {
+	if err := run(log, root, pythonBin, "-m", "ensurepip", "--upgrade"); err != nil {
 		return err
 	}
 	success = true
@@ -832,9 +894,6 @@ func uvExecutable(root string) string {
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 			return candidate
 		}
-	}
-	if path, err := exec.LookPath("uv"); err == nil {
-		return path
 	}
 	return ""
 }
@@ -901,17 +960,63 @@ func unzip(src, dest string) error {
 		}
 		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, file.Mode())
 		if err != nil {
-			_ = in.Close()
+			in.Close()
 			return err
 		}
-		_, copyErr := io.Copy(out, in)
-		closeErr := out.Close()
-		_ = in.Close()
-		if copyErr != nil {
-			return copyErr
+		_, err = io.Copy(out, in)
+		in.Close()
+		out.Close()
+		if err != nil {
+			return err
 		}
-		if closeErr != nil {
-			return closeErr
+	}
+	return nil
+}
+
+func untarGz(src, dest string) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	gr, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gr.Close()
+
+	tr := tar.NewReader(gr)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dest, header.Name)
+		if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(dest)+string(os.PathSeparator)) && filepath.Clean(target) != filepath.Clean(dest) {
+			return fmt.Errorf("unsafe tar path: %s", header.Name)
+		}
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return err
+			}
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				out.Close()
+				return err
+			}
+			out.Close()
 		}
 	}
 	return nil

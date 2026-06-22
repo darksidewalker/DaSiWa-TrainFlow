@@ -69,10 +69,10 @@ func TestFileExistsNonEmpty(t *testing.T) {
 func TestPythonExecutable(t *testing.T) {
 	root := t.TempDir()
 
-	// Test with no python found
+	// Test with no python found — should return empty string (no system fallback)
 	got := PythonExecutable(root)
-	if got == "" {
-		t.Error("expected fallback to python3")
+	if got != "" {
+		t.Errorf("expected empty string when no embedded Python found, got %q", got)
 	}
 
 	// Create a fake python executable
