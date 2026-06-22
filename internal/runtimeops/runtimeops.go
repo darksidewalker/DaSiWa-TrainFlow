@@ -840,6 +840,18 @@ func installLinuxLocalPython(root string, keepBackup bool, log Logger) error {
 		os.RemoveAll(src)
 	}
 
+	// uv managed installs drop an EXTERNALLY-MANAGED marker that blocks pip.
+	// Remove it so we can install packages into our embedded runtime.
+	emPath := filepath.Join(pythonDir, "lib", "python3.12", "EXTERNALLY-MANAGED")
+	if _, err := os.Stat(emPath); err == nil {
+		os.Remove(emPath)
+	}
+	// Also remove pyvenv.cfg which can confuse tools expecting a venv
+	pyvPath := filepath.Join(pythonDir, "pyvenv.cfg")
+	if _, err := os.Stat(pyvPath); err == nil {
+		os.Remove(pyvPath)
+	}
+
 	success = true
 	return nil
 }
