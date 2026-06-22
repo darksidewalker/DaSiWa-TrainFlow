@@ -897,12 +897,27 @@ func installLinuxLocalPython(root string, keepBackup bool, log Logger) error {
 		os.RemoveAll(subDir)
 	}
 
+	// Find the actual python binary (e.g., python3.12)
+	var pythonBin string
+	binEntries, err := os.ReadDir(filepath.Join(pythonDir, "bin"))
+	if err != nil {
+		return err
+	}
+	for _, entry := range binEntries {
+		name := entry.Name()
+		if strings.HasPrefix(name, "python"+strings.Split(resolvedVersion, "+")[0]) && !strings.Contains(name, "-config") {
+			pythonBin = filepath.Join(pythonDir, "bin", name)
+			break
+		}
+	}
+	if pythonBin == "" {
+		return errors.New("python binary not found in extracted runtime")
+	}
+
 	// Ensure bin/python symlink exists
-	pythonMinor := strings.ReplaceAll(resolvedVersion, ".", "")
-	pythonBin := filepath.Join(pythonDir, "bin", "python"+pythonMinor)
 	pythonLink := filepath.Join(pythonDir, "bin", "python")
 	if _, err := os.Stat(pythonLink); err != nil {
-		if err := os.Symlink("python"+pythonMinor, pythonLink); err != nil {
+		if err := os.Symlink(filepath.Base(pythonBin), pythonLink); err != nil {
 			return err
 		}
 	}
