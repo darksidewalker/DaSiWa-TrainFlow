@@ -186,6 +186,9 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 		"--config_file", trainingTOML,
 		"--dataset_config", datasetTOML,
 	}
+	if resumePath != "" {
+		args = append(args, "--skip_until_initial_step")
+	}
 	cmd := exec.Command(python, args...)
 	cmd.Dir = trainDir
 	cmd.Env = trainingEnv(trainDir)
