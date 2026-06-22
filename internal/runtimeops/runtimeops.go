@@ -190,9 +190,38 @@ func Verify(root string, log Logger) error {
 	return runWithEnv(log, root, []string{"PYTHONPATH=" + musubiPythonPath(root)}, python, "-c", verifyScript)
 }
 
+// stripExternallyManaged removes the PEP 668 EXTERNALLY-MANAGED marker from a
+// uv-managed Python installation so pip can install packages into it.
+// This is safe because our embedded runtime is intentionally managed by us.
+func stripExternallyManaged(pythonDir string) {
+	// Try common locations for the marker file
+	for _, marker := range []string{
+		filepath.Join(pythonDir, "lib", "python3.12", "EXTERNALLY-MANAGED"),
+		filepath.Join(pythonDir, "lib", "python3.11", "EXTERNALLY-MANAGED"),
+	} {
+		if _, err := os.Stat(marker); err == nil {
+			os.Remove(marker)
+		}
+	}
+	// Also find dynamically by scanning lib/
+	if entries, err := os.ReadDir(filepath.Join(pythonDir, "lib")); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "python3") {
+				continue
+			}
+			marker := filepath.Join(pythonDir, "lib", entry.Name(), "EXTERNALLY-MANAGED")
+			if _, err := os.Stat(marker); err == nil {
+				os.Remove(marker)
+			}
+		}
+	}
+}
+
 func ensurePython(root string, log Logger) (string, error) {
 	python := process.PythonExecutable(root)
 	if python != "" {
+		// Strip EXTERNALLY-MANAGED marker from existing runtime (may be from a previous uv install)
+		stripExternallyManaged(platformRuntimeDir(root))
 		return python, nil
 	}
 	if runtime.GOOS == "windows" {
