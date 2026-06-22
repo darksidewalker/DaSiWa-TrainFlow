@@ -1,10 +1,8 @@
 package runtimeops
 
 import (
-	"archive/tar"
 	"archive/zip"
 	"bufio"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -33,11 +31,8 @@ const (
 	flashAttentionDefaultReleaseVersion = "2.8.3"
 	flashAttentionPrebuildReleasesAPI   = "https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases?per_page=100"
 
-	// pythonStandaloneReleasesAPI points to the astral-sh/python-build-standalone
-	// repo (formerly indygreg). Tags are date-based (e.g. 20260610) and asset
-	// names encode the Python version — we must query the API to resolve a
-	// working download URL.
-	pythonStandaloneReleasesAPI = "https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=1"
+	// uvInstallURL downloads the portable uv binary for the current platform.
+	uvInstallURL = "https://github.com/astral-sh/uv/releases/latest/download/uv"
 )
 
 func InstallRequirements(root string, installFlashAttention bool, log Logger) error {
@@ -791,50 +786,6 @@ func installWindowsEmbeddedPython(root string, keepBackup bool, log Logger) erro
 	return nil
 }
 
-// fetchStandalonePythonURL queries the astral-sh/python-build-standalone
-// GitHub releases API and returns the download URL for the latest x86_64
-// Linux gnu install_only tarball, along with the resolved Python version.
-func fetchStandalonePythonURL() (url, version string) {
-	req, err := http.NewRequest(http.MethodGet, pythonStandaloneReleasesAPI, nil)
-	if err != nil {
-		return "", ""
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "DaSiWa-TrainFlow")
-	client := http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", ""
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", ""
-	}
-	var releases []struct {
-		Assets []struct {
-			Name               string `json:"name"`
-			BrowserDownloadURL string `json:"browser_download_url"`
-		} `json:"assets"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-		return "", ""
-	}
-	if len(releases) == 0 || len(releases[0].Assets) == 0 {
-		return "", ""
-	}
-	for _, asset := range releases[0].Assets {
-		name := asset.Name
-		if strings.HasSuffix(name, "x86_64-unknown-linux-gnu-install_only.tar.gz") &&
-			strings.HasPrefix(name, "cpython-3.12.") {
-			// Extract version from asset name: cpython-3.12.XX+YYYYMMDD-...
-			prefix := strings.TrimPrefix(name, "cpython-")
-			ver := strings.Split(prefix, "+")[0]
-			return asset.BrowserDownloadURL, ver
-		}
-	}
-	return "", ""
-}
-
 func installLinuxLocalPython(root string, keepBackup bool, log Logger) error {
 	pythonDir := platformRuntimeDir(root)
 	var backupDir string
@@ -847,91 +798,71 @@ func installLinuxLocalPython(root string, keepBackup bool, log Logger) error {
 	}
 	success := false
 	defer cleanupBackup(backupDir, keepBackup, &success, log)
-	if err := os.MkdirAll(pythonDir, 0755); err != nil {
+
+	// Ensure uv is available — download portable binary if needed
+	uvPath := filepath.Join(root, ".runtime-update", "uv")
+	if err := ensureUV(uvPath, log); err != nil {
 		return err
 	}
 
-	// Download standalone Python from GitHub releases (pre-built, no system python3 needed)
-	tempDir := filepath.Join(root, ".runtime-update")
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
+	// Use uv to install Python 3.12 into our target directory.
+	// UV_PYTHON_INSTALL_DIR tells uv where to put managed Python installs.
+	// uv python install handles download, extraction, symlinks, and pip bootstrap.
+	log("Installing Python 3.12 with uv...")
+	env := []string{"UV_PYTHON_INSTALL_DIR=" + pythonDir}
+	if err := runWithEnv(log, root, env, uvPath, "python", "install", "3.12", "--python-preference", "only-managed"); err != nil {
 		return err
 	}
 
-	pythonURL, resolvedVersion := fetchStandalonePythonURL()
-	if pythonURL == "" {
-		return errors.New("could not resolve standalone Python download URL; check network connectivity and try again")
-	}
-	log("Resolved standalone Python " + resolvedVersion + " from GitHub releases.")
-
-	tarName := filepath.Base(pythonURL)
-	tarPath := filepath.Join(tempDir, tarName)
-
-	log("Downloading standalone Python " + resolvedVersion + "...")
-	if err := download(log, pythonURL, tarPath); err != nil {
-		return err
-	}
-
-	log("Extracting Python " + resolvedVersion + "...")
-	if err := untarGz(tarPath, pythonDir); err != nil {
-		return err
-	}
-
-	// The standalone Python lands in pythonDir/<subdir>/ — flatten it
+	// uv installs to pythonDir/3.12.x/ — flatten to pythonDir/
 	entries, err := os.ReadDir(pythonDir)
 	if err != nil {
 		return err
 	}
-	if len(entries) == 1 && entries[0].IsDir() {
-		subDir := filepath.Join(pythonDir, entries[0].Name())
-		subEntries, err := os.ReadDir(subDir)
-		if err != nil {
-			return err
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
 		}
-		for _, entry := range subEntries {
-			src := filepath.Join(subDir, entry.Name())
-			dst := filepath.Join(pythonDir, entry.Name())
-			if err := os.Rename(src, dst); err != nil {
+		src := filepath.Join(pythonDir, entry.Name())
+		subEntries, err := os.ReadDir(src)
+		if err != nil {
+			continue
+		}
+		for _, sub := range subEntries {
+			dst := filepath.Join(pythonDir, sub.Name())
+			if err := os.Rename(filepath.Join(src, sub.Name()), dst); err != nil {
 				return err
 			}
 		}
-		os.RemoveAll(subDir)
+		os.RemoveAll(src)
 	}
 
-	// Find the actual python binary (e.g., python3.12)
-	var pythonBin string
-	binEntries, err := os.ReadDir(filepath.Join(pythonDir, "bin"))
-	if err != nil {
-		return err
-	}
-	for _, entry := range binEntries {
-		name := entry.Name()
-		if strings.HasPrefix(name, "python"+strings.Split(resolvedVersion, "+")[0]) && !strings.Contains(name, "-config") {
-			pythonBin = filepath.Join(pythonDir, "bin", name)
-			break
-		}
-	}
-	if pythonBin == "" {
-		return errors.New("python binary not found in extracted runtime")
-	}
-
-	// Ensure bin/python symlink exists
-	pythonLink := filepath.Join(pythonDir, "bin", "python")
-	if _, err := os.Stat(pythonLink); err != nil {
-		if err := os.Symlink(filepath.Base(pythonBin), pythonLink); err != nil {
-			return err
-		}
-	}
-
-	// Standalone Python does not ship with pip — install via get-pip.py
-	getPipPath := filepath.Join(tempDir, "get-pip.py")
-	if err := download(log, "https://bootstrap.pypa.io/get-pip.py", getPipPath); err != nil {
-		return err
-	}
-	log("Bootstrapping pip in local runtime...")
-	if err := run(log, root, pythonBin, getPipPath); err != nil {
-		return err
-	}
 	success = true
+	return nil
+}
+
+// ensureUV downloads the portable uv binary if it doesn't exist at the given path.
+func ensureUV(path string, log Logger) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	log("Downloading uv portable binary...")
+	downloadURL := uvInstallURL
+	if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
+		downloadURL = uvInstallURL + "-x86_64-unknown-linux-gnu"
+	} else if runtime.GOOS == "linux" && runtime.GOARCH == "arm64" {
+		downloadURL = uvInstallURL + "-aarch64-unknown-linux-gnu"
+	}
+	if err := download(log, downloadURL, path); err != nil {
+		return err
+	}
+	if err := os.Chmod(path, 0755); err != nil {
+		return err
+	}
+	log("Downloaded uv portable binary.")
 	return nil
 }
 
@@ -1046,55 +977,6 @@ func unzip(src, dest string) error {
 		out.Close()
 		if err != nil {
 			return err
-		}
-	}
-	return nil
-}
-
-func untarGz(src, dest string) error {
-	f, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	gr, err := gzip.NewReader(f)
-	if err != nil {
-		return err
-	}
-	defer gr.Close()
-
-	tr := tar.NewReader(gr)
-	for {
-		header, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dest, header.Name)
-		if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(dest)+string(os.PathSeparator)) && filepath.Clean(target) != filepath.Clean(dest) {
-			return fmt.Errorf("unsafe tar path: %s", header.Name)
-		}
-		switch header.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
-				return err
-			}
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
-			if err != nil {
-				return err
-			}
-			if _, err := io.Copy(out, tr); err != nil {
-				out.Close()
-				return err
-			}
-			out.Close()
 		}
 	}
 	return nil
