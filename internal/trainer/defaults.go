@@ -141,6 +141,26 @@ func applyStableDefaultsWithVRAM(s Settings, totalVRAMMB int) (Settings, string)
 	}
 
 	steps := int(math.Ceil(float64(imageCount*defaults.TargetRepeats) / float64(effectiveBatch)))
+	// LoRA needs ~800 optimizer steps to converge properly (scheduler warmup,
+	// AdamW/Prodigy buffers, cosine decay). When effective batch is so high
+	// that target-repeat steps fall below that, cap the effective batch to
+	// preserve step count. Better to leave VRAM headroom than train a useless model.
+	if steps < defaults.MinSteps {
+		// What effective batch gives MinSteps at target repeats?
+		idealEffective := int(math.Floor(float64(imageCount*defaults.TargetRepeats) / float64(defaults.MinSteps)))
+		if idealEffective < effectiveBatch {
+			effectiveBatch = max(idealEffective, 1)
+			// Adjust batch/grad to match. Lower batch first (VRAM bound),
+			// then grad accum if needed.
+			if effectiveBatch < s.TrainBatchSize {
+				s.TrainBatchSize = effectiveBatch
+			} else if effectiveBatch < s.TrainBatchSize*s.GradientAccumulationSteps {
+				s.GradientAccumulationSteps = max(effectiveBatch/s.TrainBatchSize, 1)
+			}
+			effectiveBatch = s.TrainBatchSize * s.GradientAccumulationSteps
+			steps = int(math.Ceil(float64(imageCount*defaults.TargetRepeats) / float64(effectiveBatch)))
+		}
+	}
 	steps = clampInt(roundUpTo(steps, 50), defaults.MinSteps, defaults.MaxSteps)
 	s.TrainingSteps = steps
 	s.SaveSteps = recommendedInterval(steps)
@@ -226,6 +246,11 @@ func vramEstimate(profile trainingProfile, rank int) (baseMB, perBatchMB, maxBat
 	switch profile.Architecture {
 	case ArchitectureSDXL:
 		return 10000 + rankOverDefault*40, 4500, 8
+	case ArchitectureAnima:
+		// Anima (DiT + Qwen3 + VAE) is much lighter per-batch than SDXL.
+		// Real-world: batch 1 ≈ 9GB, batch 10 ≈ 31GB on RTX 5090.
+		// Base ≈ 7GB, per-batch ≈ 2.4GB, safe max 16.
+		return 7000 + rankOverDefault*30, 2400, 16
 	default:
 		return 15000 + rankOverDefault*60, 7500, 4
 	}
@@ -256,6 +281,19 @@ func recommendedGradAccum(profile trainingProfile, imageCount, totalVRAMMB int) 
 		default:
 			return 1
 		}
+	}
+	if profile.Architecture == ArchitectureAnima {
+		// Anima batch size already scales with VRAM (see vramEstimate).
+		// Keep grad accum at 1 so step count stays proportional to
+		// target repeats. Only bump grad accum when VRAM detection
+		// failed and we're stuck at batch 1 with a large dataset.
+		if totalVRAMMB > 0 {
+			return 1
+		}
+		if imageCount >= 80 {
+			return 2
+		}
+		return 1
 	}
 	if imageCount >= 80 {
 		return 2
