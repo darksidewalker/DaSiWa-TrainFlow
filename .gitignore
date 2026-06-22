@@ -66,3 +66,9 @@ Thumbs.db
 
 # Hermes Agent local state
 .hermes/
+
+# Runtime update temp folder
+.runtime-update/
+
+# Runtime backups (timestamped)
+python_embeded_*_backup*/
