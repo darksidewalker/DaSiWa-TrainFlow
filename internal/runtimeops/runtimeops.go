@@ -1186,7 +1186,12 @@ func runWithEnv(log Logger, workDir string, env []string, name string, args ...s
 func stream(reader io.Reader, log Logger, done chan<- struct{}) {
 	defer func() { done <- struct{}{} }()
 	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	// Increase buffer capacity to 16MB to handle long output lines often produced
+	// by ML toolchains (e.g., serialized JSON metadata or dense progress bars).
+	const maxCapacity = 16 * 1024 * 1024
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, maxCapacity)
+
 	for scanner.Scan() {
 		log(scanner.Text())
 	}
