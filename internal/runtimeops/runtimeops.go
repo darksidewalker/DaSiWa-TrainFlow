@@ -1,8 +1,10 @@
 package runtimeops
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bufio"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -31,7 +33,8 @@ const (
 	flashAttentionDefaultReleaseVersion = "2.8.3"
 	flashAttentionPrebuildReleasesAPI   = "https://api.github.com/repos/mjun0812/flash-attention-prebuild-wheels/releases?per_page=100"
 
-	// uvInstallURL downloads the portable uv binary for the current platform.
+	// uvInstallURL downloads the portable uv tarball for the current platform.
+	// The tarball contains a `uv` binary inside.
 	uvInstallURL = "https://github.com/astral-sh/uv/releases/latest/download/uv"
 )
 
@@ -852,18 +855,114 @@ func ensureUV(path string, log Logger) error {
 	log("Downloading uv portable binary...")
 	downloadURL := uvInstallURL
 	if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
-		downloadURL = uvInstallURL + "-x86_64-unknown-linux-gnu"
+		downloadURL = uvInstallURL + "-x86_64-unknown-linux-gnu.tar.gz"
 	} else if runtime.GOOS == "linux" && runtime.GOARCH == "arm64" {
-		downloadURL = uvInstallURL + "-aarch64-unknown-linux-gnu"
+		downloadURL = uvInstallURL + "-aarch64-unknown-linux-gnu.tar.gz"
+	} else if runtime.GOOS == "windows" && runtime.GOARCH == "amd64" {
+		downloadURL = uvInstallURL + "-x86_64-pc-windows-msvc.zip"
+	} else if runtime.GOOS == "windows" && runtime.GOARCH == "arm64" {
+		downloadURL = uvInstallURL + "-aarch64-pc-windows-msvc.zip"
+	} else if runtime.GOOS == "darwin" && runtime.GOARCH == "amd64" {
+		downloadURL = uvInstallURL + "-x86_64-apple-darwin.tar.gz"
+	} else if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
+		downloadURL = uvInstallURL + "-aarch64-apple-darwin.tar.gz"
 	}
-	if err := download(log, downloadURL, path); err != nil {
+	tempDir := filepath.Join(filepath.Dir(path), "uv-tmp")
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return err
 	}
+	defer os.RemoveAll(tempDir)
+
+	archivePath := filepath.Join(tempDir, filepath.Base(downloadURL))
+	if err := download(log, downloadURL, archivePath); err != nil {
+		return err
+	}
+
+	// Extract uv binary from archive
+	if strings.HasSuffix(archivePath, ".tar.gz") {
+		if err := extractUVFromTarGz(archivePath, path); err != nil {
+			return err
+		}
+	} else if strings.HasSuffix(archivePath, ".zip") {
+		if err := extractUVFromZip(archivePath, path); err != nil {
+			return err
+		}
+	}
+
 	if err := os.Chmod(path, 0755); err != nil {
 		return err
 	}
 	log("Downloaded uv portable binary.")
 	return nil
+}
+
+func extractUVFromTarGz(archive, dest string) error {
+	f, err := os.Open(archive)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	gr, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gr.Close()
+
+	tr := tar.NewReader(gr)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if header.Name == "uv" || header.Name == "uv.exe" {
+			out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				out.Close()
+				return err
+			}
+			out.Close()
+			return nil
+		}
+	}
+	return errors.New("uv binary not found in archive")
+}
+
+func extractUVFromZip(archive, dest string) error {
+	reader, err := zip.OpenReader(archive)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	for _, file := range reader.File {
+		if file.Name == "uv" || file.Name == "uv.exe" {
+			in, err := file.Open()
+			if err != nil {
+				return err
+			}
+			out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+			if err != nil {
+				in.Close()
+				return err
+			}
+			if _, err := io.Copy(out, in); err != nil {
+				in.Close()
+				out.Close()
+				return err
+			}
+			in.Close()
+			out.Close()
+			return nil
+		}
+	}
+	return errors.New("uv binary not found in archive")
 }
 
 func cleanupBackup(backupDir string, keepBackup bool, success *bool, log Logger) {
