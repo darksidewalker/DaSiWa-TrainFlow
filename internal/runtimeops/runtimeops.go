@@ -918,7 +918,7 @@ func extractUVFromTarGz(archive, dest string) error {
 		if err != nil {
 			return err
 		}
-		if header.Name == "uv" || header.Name == "uv.exe" {
+		if header.Name == "uv" || header.Name == "uv.exe" || strings.HasSuffix(header.Name, "/uv") || strings.HasSuffix(header.Name, "/uv.exe") {
 			out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 			if err != nil {
 				return err
@@ -942,7 +942,7 @@ func extractUVFromZip(archive, dest string) error {
 	defer reader.Close()
 
 	for _, file := range reader.File {
-		if file.Name == "uv" || file.Name == "uv.exe" {
+		if file.Name == "uv" || file.Name == "uv.exe" || strings.HasSuffix(file.Name, "/uv") || strings.HasSuffix(file.Name, "/uv.exe") {
 			in, err := file.Open()
 			if err != nil {
 				return err
