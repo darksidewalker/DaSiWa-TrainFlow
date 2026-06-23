@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"image"
 	"image/color"
-	_ "image/jpeg"
 	"image/png"
 	"os"
 	"os/exec"
@@ -170,7 +169,7 @@ func TestDatasetResizePrepPreservesAspectAndWritesInDataset(t *testing.T) {
 	if _, err := os.Stat(preparedCaption); err != nil {
 		t.Fatalf("expected numbered caption in dataset folder: %v", err)
 	}
-	prepared, err := os.Open(filepath.Join(dataset, "1.jpg"))
+	prepared, err := os.Open(filepath.Join(dataset, "1.png"))
 	if err != nil {
 		t.Fatalf("expected numbered image in dataset folder: %v", err)
 	}

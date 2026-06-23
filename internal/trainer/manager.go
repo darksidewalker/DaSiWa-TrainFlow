@@ -981,8 +981,8 @@ for index, image_path in enumerate(images, 1):
         new_height = max(1, round(height * scale))
         if (new_width, new_height) != image.size:
             image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-        out_image = output_dir / f"{base}.jpg"
-        image.save(out_image, quality=95, subsampling=0)
+        out_image = output_dir / f"{base}.png"
+        image.save(out_image)
     caption_src = captions_by_stem[image_path.stem]
     caption_dst = output_dir / f"{base}.txt"
     shutil.copy2(caption_src, caption_dst)
