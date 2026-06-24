@@ -127,6 +127,8 @@ const openOutputButton = document.getElementById("openOutputButton");
 const tagDatasetButton = document.getElementById("tagDatasetButton");
 const resizeDatasetButton = document.getElementById("resizeDatasetButton");
 const prepDatasetButton = document.getElementById("prepDatasetButton");
+const copyLogButton = document.getElementById("copyLogButton");
+const clearLogButton = document.getElementById("clearLogButton");
 const normalizeVideoButton = document.getElementById("normalizeVideoButton");
 const writeMusubiDatasetButton = document.getElementById("writeMusubiDatasetButton");
 const cacheMusubiTextButton = document.getElementById("cacheMusubiTextButton");
@@ -1043,6 +1045,17 @@ startButton.addEventListener("click", startTraining);
 tagDatasetButton.addEventListener("click", () => runDatasetPrep("tag"));
 resizeDatasetButton.addEventListener("click", () => runDatasetPrep("resize"));
 prepDatasetButton.addEventListener("click", () => runDatasetPrep("all"));
+copyLogButton.addEventListener("click", () => {
+  navigator.clipboard.writeText(logs.textContent).catch(() => {
+    const ta = document.createElement("textarea");
+    ta.value = logs.textContent;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  });
+});
+clearLogButton.addEventListener("click", () => { logs.textContent = ""; });
 normalizeVideoButton.addEventListener("click", () => runDatasetPrep("normalize-video"));
 writeMusubiDatasetButton.addEventListener("click", () => runDatasetPrep("musubi-dataset-toml"));
 cacheMusubiTextButton.addEventListener("click", () => runDatasetPrep("musubi-cache-text"));

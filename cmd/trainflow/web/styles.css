@@ -366,10 +366,24 @@ textarea:focus {
   overflow: hidden;
 }
 
-.log-panel .panel-title {
+.log-panel .panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin: 0;
   padding: 10px 12px;
   border-bottom: 1px solid var(--line);
+}
+
+.log-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.log-actions .mini-action {
+  padding: 0 8px;
+  font-size: 10px;
 }
 
 #logs {

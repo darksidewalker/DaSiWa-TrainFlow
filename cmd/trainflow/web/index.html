@@ -246,7 +246,13 @@
 
       <section class="center-stage">
         <section class="log-panel">
-          <div class="panel-title">Training Log</div>
+          <div class="panel-heading">
+            <div class="panel-title">Training Log</div>
+            <div class="log-actions">
+              <button id="copyLogButton" class="mini-action" title="Copy log to clipboard">Copy</button>
+              <button id="clearLogButton" class="mini-action" title="Clear the log">Clear</button>
+            </div>
+          </div>
           <pre id="logs"></pre>
         </section>
         <section class="tools-row">
