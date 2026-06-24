@@ -16,14 +16,34 @@ type profileDefaults struct {
 	TextEncoderLR2     string
 	Optimizer          string
 	BaseSteps          int
-	TargetRepeats      int
+	TargetRepeats      int // baseline (AdamW); Prodigy applies a multiplier
 	VideoTargetRepeats int
 	VideoTargetEpochs  int
 	VideoTargetSteps   int
 	VideoMinSteps      int
 	VideoMaxSteps      int
-	MinSteps           int
-	MaxSteps           int
+	MinSteps           int // baseline (AdamW); Prodigy applies a multiplier
+	MaxSteps           int // baseline (AdamW); Prodigy applies a multiplier
+}
+
+// optimizerSteps holds optimizer-specific step-count adjustments.
+// Prodigy converges ~25% faster than AdamW (fewer steps needed) and
+// needs ~100 steps of warmup for its LR estimation to stabilize.
+// AdamW needs a full cosine decay cycle (~800+ steps minimum).
+type optimizerSteps struct {
+	StepMultiplier float64 // applied to raw step count; Prodigy=0.75, AdamW=1.0
+	AbsoluteMin    int     // hard floor regardless of profile scaling
+	WarmupSteps    int     // informational; used in message
+}
+
+func optimizerStepsFor(optimizer string) optimizerSteps {
+	switch {
+	case strings.EqualFold(optimizer, "Prodigy"):
+		return optimizerSteps{StepMultiplier: 0.75, AbsoluteMin: 600, WarmupSteps: 100}
+	default:
+		// AdamW, AdamW8bit, Adafactor, Lion, DAdapt*, etc.
+		return optimizerSteps{StepMultiplier: 1.0, AbsoluteMin: 800, WarmupSteps: 50}
+	}
 }
 
 func defaultsForProfile(profile trainingProfile) profileDefaults {
@@ -134,44 +154,61 @@ func applyStableDefaultsWithVRAM(s Settings, totalVRAMMB int) (Settings, string)
 	s.FlashAttention = false
 	s = normalizeSettings(s)
 
+	// Optimizer-aware step adjustment: Prodigy converges ~25% faster.
+	optSteps := optimizerStepsFor(s.Optimizer)
+
 	effectiveBatch := s.TrainBatchSize * s.GradientAccumulationSteps
 
 	if profile.Video && defaults.VideoTargetRepeats > 0 {
 		return applyVideoDefaults(s, imageCount, profile, defaults, totalVRAMMB)
 	}
 
-	steps := int(math.Ceil(float64(imageCount*defaults.TargetRepeats) / float64(effectiveBatch)))
-	// LoRA needs ~800 optimizer steps to converge properly (scheduler warmup,
-	// AdamW/Prodigy buffers, cosine decay). When effective batch is so high
-	// that target-repeat steps fall below that, cap the effective batch to
-	// preserve step count. Better to leave VRAM headroom than train a useless model.
-	if steps < defaults.MinSteps {
-		// What effective batch gives MinSteps at target repeats?
-		idealEffective := int(math.Floor(float64(imageCount*defaults.TargetRepeats) / float64(defaults.MinSteps)))
+	// Scale target repeats by optimizer multiplier so Prodigy trains fewer steps.
+	targetRepeats := int(math.Round(float64(defaults.TargetRepeats) * optSteps.StepMultiplier))
+	if targetRepeats < 1 {
+		targetRepeats = 1
+	}
+	steps := int(math.Ceil(float64(imageCount*targetRepeats) / float64(effectiveBatch)))
+
+	// Scale min/max bounds by optimizer multiplier.
+	optMin := int(math.Round(float64(defaults.MinSteps) * optSteps.StepMultiplier))
+	optMax := int(math.Round(float64(defaults.MaxSteps) * optSteps.StepMultiplier))
+	// Enforce optimizer absolute floor.
+	if optMin < optSteps.AbsoluteMin {
+		optMin = optSteps.AbsoluteMin
+	}
+
+	// LoRA needs a minimum number of optimizer steps to converge properly
+	// (scheduler warmup, AdamW/Prodigy buffers, cosine decay). When effective
+	// batch is so high that target-repeat steps fall below that, cap the
+	// effective batch to preserve step count. Better to leave VRAM headroom
+	// than train a useless model.
+	if steps < optMin {
+		idealEffective := int(math.Floor(float64(imageCount*targetRepeats) / float64(optMin)))
 		if idealEffective < effectiveBatch {
 			effectiveBatch = max(idealEffective, 1)
-			// Adjust batch/grad to match. Lower batch first (VRAM bound),
-			// then grad accum if needed.
 			if effectiveBatch < s.TrainBatchSize {
 				s.TrainBatchSize = effectiveBatch
 			} else if effectiveBatch < s.TrainBatchSize*s.GradientAccumulationSteps {
 				s.GradientAccumulationSteps = max(effectiveBatch/s.TrainBatchSize, 1)
 			}
 			effectiveBatch = s.TrainBatchSize * s.GradientAccumulationSteps
-			steps = int(math.Ceil(float64(imageCount*defaults.TargetRepeats) / float64(effectiveBatch)))
+			steps = int(math.Ceil(float64(imageCount*targetRepeats) / float64(effectiveBatch)))
 		}
 	}
-	steps = clampInt(roundUpTo(steps, 50), defaults.MinSteps, defaults.MaxSteps)
+	steps = clampInt(roundUpTo(steps, 50), optMin, optMax)
 	s.TrainingSteps = steps
 	s.SaveSteps = recommendedInterval(steps)
 	s.SampleSteps = recommendedInterval(steps)
 
 	actualRepeats := float64(steps*effectiveBatch) / float64(imageCount)
 	message := fmt.Sprintf(
-		"%s auto calc: %d images, target %d repeats/image, batch %d x grad %d = effective %d, %d steps.",
+		"%s auto calc: %d images, optimizer %s (warmup ~%d steps), target %d repeats/image, batch %d x grad %d = effective %d, %d steps.",
 		profile.Label,
 		imageCount,
-		defaults.TargetRepeats,
+		s.Optimizer,
+		optSteps.WarmupSteps,
+		targetRepeats,
 		s.TrainBatchSize,
 		s.GradientAccumulationSteps,
 		effectiveBatch,
