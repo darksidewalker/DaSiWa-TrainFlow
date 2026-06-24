@@ -156,11 +156,14 @@ func normalizeSettings(s Settings) Settings {
 		s.Optimizer = "Prodigy"
 	}
 	if s.Architecture == ArchitectureLTX23 || s.Architecture == ArchitectureWAN22 {
-		if s.NetworkRank <= 0 || s.NetworkRank == 32 {
-			s.NetworkRank = 128
+		// Video models need higher rank/alpha than image models.
+		// Override when the value matches a known image-model default (32 or 48).
+		// Preserves user-set values like 128.
+		if s.NetworkRank <= 0 || s.NetworkRank == 32 || s.NetworkRank == 48 {
+			s.NetworkRank = 64
 		}
-		if s.NetworkAlpha <= 0 || s.NetworkAlpha == s.NetworkRank {
-			s.NetworkAlpha = 1
+		if s.NetworkAlpha <= 0 || s.NetworkAlpha == 32 {
+			s.NetworkAlpha = 64
 		}
 		if s.BlocksToSwap <= 0 {
 			s.BlocksToSwap = 14
@@ -204,10 +207,10 @@ func normalizeSettings(s Settings) Settings {
 		}
 	}
 	if s.NetworkRank <= 0 {
-		s.NetworkRank = 32
+		s.NetworkRank = 48
 	}
 	if s.NetworkAlpha <= 0 {
-		s.NetworkAlpha = s.NetworkRank
+		s.NetworkAlpha = 32
 	}
 	if strings.TrimSpace(s.LearningRate) == "" {
 		if s.Architecture == ArchitectureSDXL {

@@ -10,6 +10,7 @@ import (
 
 type profileDefaults struct {
 	NetworkRank        int
+	NetworkAlpha       int
 	LearningRate       string
 	UNetLR             string
 	TextEncoderLR1     string
@@ -50,7 +51,8 @@ func defaultsForProfile(profile trainingProfile) profileDefaults {
 	switch profile.Architecture {
 	case ArchitectureSDXL:
 		return profileDefaults{
-			NetworkRank:        32,
+			NetworkRank:        64,
+			NetworkAlpha:       32,
 			LearningRate:       "1e-4",
 			UNetLR:             "1e-4",
 			TextEncoderLR1:     "1e-5",
@@ -68,7 +70,8 @@ func defaultsForProfile(profile trainingProfile) profileDefaults {
 		}
 	case ArchitectureLTX23:
 		return profileDefaults{
-			NetworkRank:        128,
+			NetworkRank:        64,
+			NetworkAlpha:       64,
 			LearningRate:       "1.0",
 			UNetLR:             "1e-4",
 			Optimizer:          "Prodigy",
@@ -84,7 +87,8 @@ func defaultsForProfile(profile trainingProfile) profileDefaults {
 		}
 	case ArchitectureWAN22:
 		return profileDefaults{
-			NetworkRank:        128,
+			NetworkRank:        64,
+			NetworkAlpha:       64,
 			LearningRate:       "1.0",
 			UNetLR:             "1e-4",
 			Optimizer:          "Prodigy",
@@ -100,7 +104,8 @@ func defaultsForProfile(profile trainingProfile) profileDefaults {
 		}
 	default:
 		return profileDefaults{
-			NetworkRank:        32,
+			NetworkRank:        48,
+			NetworkAlpha:       32,
 			LearningRate:       "1e-4",
 			UNetLR:             "1e-4",
 			Optimizer:          "Prodigy",
@@ -137,6 +142,7 @@ func applyStableDefaultsWithVRAM(s Settings, totalVRAMMB int) (Settings, string)
 	}
 
 	s.NetworkRank = defaults.NetworkRank
+	s.NetworkAlpha = defaults.NetworkAlpha
 	if !profile.Video {
 		if s.Optimizer == "" {
 			s.Optimizer = defaults.Optimizer

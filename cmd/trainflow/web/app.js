@@ -408,6 +408,7 @@ function setArchitecture(value, save = true) {
     checkpointLabel.textContent = "SDXL Checkpoint";
     qwenLabel.textContent = "Qwen3";
     vaeLabel.textContent = "VAE (optional)";
+    applyImageDefaults("sdxl");
   } else if (architecture === "ltx23") {
     checkpointLabel.textContent = "LTX 2.3 Checkpoint";
     qwenLabel.textContent = "Gemma Text Encoder";
@@ -421,6 +422,7 @@ function setArchitecture(value, save = true) {
     ditLabel.textContent = "DiT";
     qwenLabel.textContent = "Qwen3";
     vaeLabel.textContent = "VAE";
+    applyImageDefaults("anima");
   }
   normalizeOptimizerLearningRate();
   if (save) {
@@ -429,11 +431,24 @@ function setArchitecture(value, save = true) {
   }
 }
 
+function applyImageDefaults(architecture) {
+  // Always set profile-aware rank/alpha — don't preserve stale values from other arches.
+  if (architecture === "sdxl") {
+    els.network_rank.value = 64;
+    els.network_alpha.value = 32;
+  } else {
+    // anima default
+    els.network_rank.value = 48;
+    els.network_alpha.value = 32;
+  }
+}
+
 function applyVideoDefaults(architecture, save) {
   if (!save) return;
   if (!els.optimizer.value) els.optimizer.value = "Prodigy";
-  if (!els.network_rank.value || els.network_rank.value === "32") els.network_rank.value = 128;
-  els.network_alpha.value = 1;
+  // Video models (LTX 2.3, WAN 2.2) use rank 64 / alpha 64 for detail + motion.
+  els.network_rank.value = 64;
+  els.network_alpha.value = 64;
   els.mixed_precision.value = els.mixed_precision.value || "bf16";
   els.num_cpu_threads.value = els.num_cpu_threads.value || 8;
   els.video_target_frames.value = els.video_target_frames.value || "1,65,129";

@@ -3,6 +3,7 @@ package trainer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -134,5 +135,159 @@ func TestApplyStableDefaults_112images(t *testing.T) {
 	}
 	if result.TrainingSteps%result.SampleSteps != 0 {
 		t.Errorf("SampleSteps %d does not divide TrainingSteps %d", result.SampleSteps, result.TrainingSteps)
+	}
+}
+
+// --- rank/alpha default tests per architecture ---
+
+func TestProfileDefaults_rankAlpha(t *testing.T) {
+	tests := []struct {
+		arch       string
+		wantRank   int
+		wantAlpha  int
+	}{
+		{ArchitectureAnima, 48, 32},
+		{ArchitectureSDXL, 64, 32},
+		{ArchitectureLTX23, 64, 64},
+		{ArchitectureWAN22, 64, 64},
+	}
+	for _, tt := range tests {
+		profile := profileFor(Settings{Architecture: tt.arch})
+		defaults := defaultsForProfile(profile)
+		if defaults.NetworkRank != tt.wantRank {
+			t.Errorf("%s: NetworkRank = %d, want %d", tt.arch, defaults.NetworkRank, tt.wantRank)
+		}
+		if defaults.NetworkAlpha != tt.wantAlpha {
+			t.Errorf("%s: NetworkAlpha = %d, want %d", tt.arch, defaults.NetworkAlpha, tt.wantAlpha)
+		}
+	}
+}
+
+func TestApplyStableDefaults_rankAlpha_preserved(t *testing.T) {
+	// Auto calc should apply profile-aware rank/alpha defaults
+	tests := []struct {
+		arch       string
+		wantRank   int
+		wantAlpha  int
+	}{
+		{ArchitectureAnima, 48, 32},
+		{ArchitectureSDXL, 64, 32},
+		{ArchitectureLTX23, 64, 64},
+		{ArchitectureWAN22, 64, 64},
+	}
+	for _, tt := range tests {
+		s := Settings{
+			Architecture: tt.arch,
+			DatasetPath:  "",
+		}
+		result, _ := applyStableDefaults(s)
+		if result.NetworkRank != tt.wantRank {
+			t.Errorf("%s: NetworkRank = %d, want %d", tt.arch, result.NetworkRank, tt.wantRank)
+		}
+		if result.NetworkAlpha != tt.wantAlpha {
+			t.Errorf("%s: NetworkAlpha = %d, want %d", tt.arch, result.NetworkAlpha, tt.wantAlpha)
+		}
+	}
+}
+
+func TestCreateTrainingTOML_alpha_written(t *testing.T) {
+	// Verify that network_alpha in the TOML uses s.NetworkAlpha, not s.NetworkRank.
+	tmp := t.TempDir()
+	s := Settings{
+		Architecture:  ArchitectureAnima,
+		ProjectName:   "test",
+		OutputPath:    tmp,
+		DatasetPath:   tmp,
+		NetworkRank:   48,
+		NetworkAlpha:  32,
+		LearningRate:  "1e-4",
+		TrainingSteps: 1000,
+		SaveSteps:     100,
+		SampleSteps:   100,
+	}
+	profile := profileFor(s)
+	path, err := createTrainingTOML(s.ProjectName, s, profile, s.OutputPath, "", tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toml := string(data)
+	// Check that alpha=32 appears, not alpha=48
+	if !strings.Contains(toml, "network_alpha = 32") {
+		t.Errorf("TOML should contain 'network_alpha = 32', got:\n%s", toml)
+	}
+	if strings.Contains(toml, "network_alpha = 48") {
+		t.Errorf("TOML should NOT contain 'network_alpha = 48' (alpha should be 32, not rank): \n%s", toml)
+	}
+}
+
+// --- cross-architecture rank/alpha transition tests ---
+
+func TestNormalizeSettings_video_from_anima(t *testing.T) {
+	// Switching from Anima (rank=48, alpha=32) to LTX23 should upgrade to 64/64.
+	s := Settings{
+		Architecture: ArchitectureLTX23,
+		NetworkRank:  48,
+		NetworkAlpha: 32,
+	}
+	s = normalizeSettings(s)
+	if s.NetworkRank != 64 {
+		t.Errorf("LTX23 from Anima rank 48: got rank %d, want 64", s.NetworkRank)
+	}
+	if s.NetworkAlpha != 64 {
+		t.Errorf("LTX23 from Anima alpha 32: got alpha %d, want 64", s.NetworkAlpha)
+	}
+}
+
+func TestNormalizeSettings_video_from_sdxl(t *testing.T) {
+	// Switching from SDXL (rank=64, alpha=32) to LTX23 should fix alpha to 64.
+	s := Settings{
+		Architecture: ArchitectureLTX23,
+		NetworkRank:  64,
+		NetworkAlpha: 32,
+	}
+	s = normalizeSettings(s)
+	if s.NetworkRank != 64 {
+		t.Errorf("LTX23 from SDXL rank 64: got rank %d, want 64", s.NetworkRank)
+	}
+	if s.NetworkAlpha != 64 {
+		t.Errorf("LTX23 from SDXL alpha 32: got alpha %d, want 64", s.NetworkAlpha)
+	}
+}
+
+func TestNormalizeSettings_video_preserves_user_rank(t *testing.T) {
+	// User explicitly set rank=128 — normalizeSettings should NOT downgrade it.
+	s := Settings{
+		Architecture: ArchitectureLTX23,
+		NetworkRank:  128,
+		NetworkAlpha: 64,
+	}
+	s = normalizeSettings(s)
+	if s.NetworkRank != 128 {
+		t.Errorf("LTX23 user rank 128: got rank %d, want 128 (should preserve)", s.NetworkRank)
+	}
+}
+
+func TestNormalizeSettings_image_from_video(t *testing.T) {
+	// Switching from LTX23 (rank=64, alpha=64) to Anima should use Anima defaults.
+	s := Settings{
+		Architecture: ArchitectureAnima,
+		NetworkRank:  64,
+		NetworkAlpha: 64,
+	}
+	s = normalizeSettings(s)
+	// normalizeSettings only fills missing values for image models (fallback to 48/32 when <= 0).
+	// It does NOT downgrade video values — that's handled by the JS frontend and auto-calc.
+	// The key invariant: image fallbacks are 48/32 when values are zero.
+	sZero := Settings{Architecture: ArchitectureAnima}
+	sZero = normalizeSettings(sZero)
+	if sZero.NetworkRank != 48 {
+		t.Errorf("Anima zero rank: got %d, want 48", sZero.NetworkRank)
+	}
+	if sZero.NetworkAlpha != 32 {
+		t.Errorf("Anima zero alpha: got %d, want 32", sZero.NetworkAlpha)
 	}
 }

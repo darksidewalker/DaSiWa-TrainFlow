@@ -132,7 +132,7 @@ func writeAnimaTrainingTOML(content *strings.Builder, projectName string, s Sett
 	content.WriteString(fmt.Sprintf("vae = %s\n", tomlString(filepath.ToSlash(absPath(s.VAEPath)))))
 	content.WriteString("network_module = \"networks.lora_anima\"\n")
 	content.WriteString(fmt.Sprintf("network_dim = %d\n", s.NetworkRank))
-	content.WriteString(fmt.Sprintf("network_alpha = %d\n", s.NetworkRank))
+	content.WriteString(fmt.Sprintf("network_alpha = %d\n", s.NetworkAlpha))
 	content.WriteString(fmt.Sprintf("network_train_unet_only = %t\n", s.TrainUNetOnly))
 	content.WriteString("gradient_checkpointing = true\n")
 	content.WriteString("max_grad_norm = 1.0\n")
@@ -191,7 +191,7 @@ func writeSDXLTrainingTOML(content *strings.Builder, projectName string, s Setti
 	}
 	content.WriteString("network_module = \"networks.lora\"\n")
 	content.WriteString(fmt.Sprintf("network_dim = %d\n", s.NetworkRank))
-	content.WriteString(fmt.Sprintf("network_alpha = %d\n", s.NetworkRank))
+	content.WriteString(fmt.Sprintf("network_alpha = %d\n", s.NetworkAlpha))
 	content.WriteString(fmt.Sprintf("network_train_unet_only = %t\n", s.TrainUNetOnly))
 	content.WriteString("gradient_checkpointing = true\n")
 	content.WriteString("max_grad_norm = 1.0\n")
