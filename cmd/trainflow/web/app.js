@@ -18,7 +18,9 @@ const fields = [
   "training_steps",
   "save_steps",
   "sample_steps",
-  "pos_prompt",
+  "prompt_1",
+  "prompt_2",
+  "prompt_3",
   "neg_prompt",
   "width",
   "height",
@@ -217,6 +219,10 @@ function collectSettings() {
       data[id] = el.value;
     }
   }
+  // Build sample_prompts from the three prompt fields
+  const prompts = [data.prompt_1, data.prompt_2, data.prompt_3].map((s) => s.trim()).filter(Boolean);
+  data.sample_prompts = prompts.length ? prompts : [data.prompt_1 || ""];
+  data.pos_prompt = data.sample_prompts[0] || "";
   data.architecture = normalizeArchitecture(data.architecture);
   data.train_seed = 42;
   data.sample_steps_gen = 30;
@@ -231,6 +237,14 @@ function applySettings(data) {
     } else {
       els[id].value = data[id];
     }
+  }
+  // Populate prompt fields from sample_prompts or pos_prompt (backward compat)
+  if (Array.isArray(data.sample_prompts) && data.sample_prompts.length) {
+    els.prompt_1.value = data.sample_prompts[0] || "";
+    els.prompt_2.value = data.sample_prompts[1] || "";
+    els.prompt_3.value = data.sample_prompts[2] || "";
+  } else if (data.pos_prompt) {
+    els.prompt_1.value = data.pos_prompt;
   }
   syncVideoNormalizerProxiesFromSettings();
   setArchitecture(data.architecture || "anima", false);

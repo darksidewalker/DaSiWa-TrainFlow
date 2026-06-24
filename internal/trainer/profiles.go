@@ -233,6 +233,10 @@ func normalizeSettings(s Settings) Settings {
 	if s.TargetVRAMPercent <= 0 {
 		s.TargetVRAMPercent = 90
 	}
+	// Backward compat: migrate legacy pos_prompt into sample_prompts
+	if len(s.SamplePrompts) == 0 && strings.TrimSpace(s.PositivePrompt) != "" {
+		s.SamplePrompts = []string{s.PositivePrompt}
+	}
 	s.TargetVRAMPercent = clampInt(s.TargetVRAMPercent, 50, 98)
 	return s
 }

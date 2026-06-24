@@ -26,6 +26,7 @@ type Settings struct {
 	SaveSteps                 int     `json:"save_steps"`
 	SampleSteps               int     `json:"sample_steps"`
 	PositivePrompt            string  `json:"pos_prompt"`
+	SamplePrompts             []string `json:"sample_prompts"`
 	NegativePrompt            string  `json:"neg_prompt"`
 	Width                     int     `json:"width"`
 	Height                    int     `json:"height"`

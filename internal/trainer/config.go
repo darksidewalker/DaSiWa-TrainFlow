@@ -12,17 +12,34 @@ import (
 
 func createSamplePrompts(projectName string, s Settings, outDir string) (string, error) {
 	trigger := strings.TrimSpace(s.TriggerWord)
-	prompt := strings.TrimSpace(strings.ReplaceAll(s.PositivePrompt, "\n", " "))
-	if s.AutoTrigger && trigger != "" && !promptHasTrigger(prompt, trigger) {
-		if prompt == "" {
-			prompt = trigger
-		} else {
-			prompt = trigger + ", " + prompt
+	neg := strings.TrimSpace(strings.ReplaceAll(s.NegativePrompt, "\n", " "))
+
+	// Build list of positive prompts. Prefer SamplePrompts array; fall back to legacy PositivePrompt.
+	var prompts []string
+	for _, p := range s.SamplePrompts {
+		p = strings.TrimSpace(strings.ReplaceAll(p, "\n", " "))
+		if p != "" {
+			prompts = append(prompts, p)
 		}
 	}
-	neg := strings.TrimSpace(strings.ReplaceAll(s.NegativePrompt, "\n", " "))
-	content := fmt.Sprintf("%s --n %s --w %d --h %d --l %s --s %d --d %d",
-		prompt,
+	if len(prompts) == 0 {
+		p := strings.TrimSpace(strings.ReplaceAll(s.PositivePrompt, "\n", " "))
+		if p != "" {
+			prompts = append(prompts, p)
+		}
+	}
+	if len(prompts) == 0 {
+		prompts = append(prompts, trigger)
+	}
+
+	// Prepend trigger to each prompt if needed
+	for i, p := range prompts {
+		if s.AutoTrigger && trigger != "" && !promptHasTrigger(p, trigger) {
+			prompts[i] = trigger + ", " + p
+		}
+	}
+
+	params := fmt.Sprintf(" --n %s --w %d --h %d --l %s --s %d --d %d",
 		neg,
 		s.Width,
 		s.Height,
@@ -30,6 +47,13 @@ func createSamplePrompts(projectName string, s Settings, outDir string) (string,
 		s.SampleStepsGen,
 		s.SampleSeed,
 	)
+
+	var lines []string
+	for _, p := range prompts {
+		lines = append(lines, p+params)
+	}
+
+	content := strings.Join(lines, "\n")
 	path := filepath.Join(outDir, projectName+"_prompts.txt")
 	return path, os.WriteFile(path, []byte(content), 0644)
 }
