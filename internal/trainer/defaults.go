@@ -336,11 +336,84 @@ func recommendedVideoRepeats(videoCount, epochs, batchSize int, defaults profile
 }
 
 func recommendedVideoInterval(steps int) int {
-	return clampInt(roundUpTo(steps/12, 50), 250, 500)
+	ideal := clampInt(roundUpTo(steps/12, 50), 250, 500)
+	return bestDivisorInRange(steps, 250, 500, ideal)
 }
 
 func recommendedInterval(steps int) int {
-	return clampInt(roundUpTo(steps/10, 50), 100, 300)
+	ideal := clampInt(roundUpTo(steps/10, 50), 100, 300)
+	return bestDivisorInRange(steps, 100, 300, ideal)
+}
+
+// bestDivisorInRange finds the divisor of `steps` closest to `ideal` within [lo, hi].
+// If no divisor exists in range, returns the divisor closest to the range boundaries.
+func bestDivisorInRange(steps, lo, hi, ideal int) int {
+	// Collect all divisors
+	divisors := divisorsOf(steps)
+
+	// Prefer: divisor in [lo, hi] closest to ideal
+	best := -1
+	bestDist := math.MaxInt64
+	for _, d := range divisors {
+		if d < lo || d > hi {
+			continue
+		}
+		dist := absInt(d - ideal)
+		if dist < bestDist {
+			bestDist = dist
+			best = d
+		}
+	}
+	if best > 0 {
+		return best
+	}
+
+	// Fallback: closest divisor outside the range
+	best = -1
+	bestDist = math.MaxInt64
+	for _, d := range divisors {
+		if d >= lo && d <= hi {
+			continue
+		}
+		dist := absInt(d - ideal)
+		if dist < bestDist {
+			bestDist = dist
+			best = d
+		}
+	}
+	if best > 0 {
+		return best
+	}
+
+	// Absolute last resort (shouldn't happen; every number has divisor 1)
+	return lo
+}
+
+// divisorsOf returns all positive divisors of n in ascending order.
+func divisorsOf(n int) []int {
+	var small, large []int
+	for i := 1; i*i <= n; i++ {
+		if n%i == 0 {
+			small = append(small, i)
+			if i*i != n {
+				large = append(large, n/i)
+			}
+		}
+	}
+	// large is in descending order; reverse and append
+	result := make([]int, 0, len(small)+len(large))
+	result = append(result, small...)
+	for i := len(large) - 1; i >= 0; i-- {
+		result = append(result, large[i])
+	}
+	return result
+}
+
+func absInt(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 func roundUpTo(value, step int) int {
