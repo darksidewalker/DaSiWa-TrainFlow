@@ -396,13 +396,6 @@ class AnimaNetworkTrainer(train_network.NetworkTrainer):
         metadata["ss_model_family"] = "anima"
         metadata["ss_model_name"] = "anima-base-v1.0"
         metadata["ss_architecture"] = "anima-base-v1.0/lora"
-        metadata["ss_weighting_scheme"] = args.weighting_scheme
-        metadata["ss_logit_mean"] = args.logit_mean
-        metadata["ss_logit_std"] = args.logit_std
-        metadata["ss_mode_scale"] = args.mode_scale
-        metadata["ss_timestep_sampling"] = args.timestep_sampling
-        metadata["ss_sigmoid_scale"] = args.sigmoid_scale
-        metadata["ss_discrete_flow_shift"] = args.discrete_flow_shift
 
     def is_text_encoder_not_needed_for_training(self, args):
         return args.cache_text_encoder_outputs and not self.is_train_text_encoder(args)

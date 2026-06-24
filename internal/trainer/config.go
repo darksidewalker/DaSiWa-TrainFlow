@@ -182,6 +182,20 @@ func writeAnimaTrainingTOML(content *strings.Builder, projectName string, s Sett
 	content.WriteString("vae_chunk_size = 32\n")
 	content.WriteString("vae_disable_cache = true\n")
 	content.WriteString(fmt.Sprintf("seed = %d\n", s.TrainSeed))
+	writeMetadataTOML(content, projectName, s)
+}
+
+func writeMetadataTOML(content *strings.Builder, projectName string, s Settings) {
+	content.WriteString(fmt.Sprintf("metadata_title = %s\n", tomlString(projectName)))
+	if strings.TrimSpace(s.TriggerWord) != "" {
+		content.WriteString(fmt.Sprintf("metadata_trigger_phrase = %s\n", tomlString(strings.TrimSpace(s.TriggerWord))))
+	}
+	if strings.TrimSpace(s.MetadataAuthor) != "" {
+		content.WriteString(fmt.Sprintf("metadata_author = %s\n", tomlString(strings.TrimSpace(s.MetadataAuthor))))
+	}
+	if strings.TrimSpace(s.MetadataTags) != "" {
+		content.WriteString(fmt.Sprintf("metadata_tags = %s\n", tomlString(strings.TrimSpace(s.MetadataTags))))
+	}
 }
 
 func writeSDXLTrainingTOML(content *strings.Builder, projectName string, s Settings, outputDir, promptPath, scheduler string, optArgs []string) {
@@ -239,6 +253,7 @@ func writeSDXLTrainingTOML(content *strings.Builder, projectName string, s Setti
 	content.WriteString("max_data_loader_n_workers = 4\n")
 	content.WriteString("max_token_length = 225\n")
 	content.WriteString(fmt.Sprintf("seed = %d\n", s.TrainSeed))
+	writeMetadataTOML(content, projectName, s)
 }
 
 func resolveResumePath(s Settings, outputDir string) string {

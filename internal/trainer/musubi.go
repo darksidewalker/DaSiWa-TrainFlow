@@ -184,6 +184,9 @@ func appendCommonMusubiTrainArgs(args []string, s Settings) []string {
 	args = appendBoolArg(args, "--save_state_on_train_end", s.SaveStateOnTrainEnd)
 	args = append(args, "--max_train_epochs", strconv.Itoa(defaultInt(s.TargetEpochs, 6)))
 	args = append(args, "--metadata_title", projectNameForSettings(s))
+	if strings.TrimSpace(s.TriggerWord) != "" {
+		args = append(args, "--metadata_trigger_phrase", s.TriggerWord)
+	}
 	if strings.TrimSpace(s.MetadataAuthor) != "" {
 		args = append(args, "--metadata_author", s.MetadataAuthor)
 	}
