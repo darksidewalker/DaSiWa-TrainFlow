@@ -1,14 +1,5 @@
 # Anima LoRA training script
 
-import os
-import sys
-from pathlib import Path
-
-
-current_script_path = Path(__file__).resolve().parent
-if str(current_script_path) not in sys.path:
-    sys.path.insert(0, str(current_script_path))
-
 import argparse
 from typing import Any, Optional, Union
 
@@ -28,8 +19,12 @@ from library import (
     sd3_train_utils,
     strategy_anima,
     strategy_base,
-    train_util,
+    sampling,
 )
+import library.args as args_util
+import library.compile_utils as compile_utils
+import library.model_io as model_io
+from library.dataset import DatasetGroup, MinimalDataset
 import train_network
 from library.utils import setup_logging
 
@@ -47,9 +42,11 @@ class AnimaNetworkTrainer(train_network.NetworkTrainer):
     def assert_extra_args(
         self,
         args,
-        train_dataset_group: Union[train_util.DatasetGroup, train_util.MinimalDataset],
-        val_dataset_group: Optional[train_util.DatasetGroup],
+        train_dataset_group: Union[DatasetGroup, MinimalDataset],
+        val_dataset_group: Optional[DatasetGroup],
     ):
+        flux_train_utils.log_timestep_sampling_info(args)
+
         if args.fp8_base or args.fp8_base_unet:
             logger.warning("fp8_base and fp8_base_unet are not supported. / fp8_baseとfp8_base_unetはサポートされていません。")
             args.fp8_base = False
@@ -84,6 +81,16 @@ class AnimaNetworkTrainer(train_network.NetworkTrainer):
                 args.blocks_to_swap is None or args.blocks_to_swap == 0
             ), "blocks_to_swap is not supported with unsloth_offload_checkpointing"
 
+        if args.compile:
+            assert not args.torch_compile, (
+                "--compile (per-block torch.compile) and --torch_compile (accelerate dynamo) cannot be used together"
+                " / --compile（ブロック単位torch.compile）と--torch_compile（accelerate dynamo）は併用できません"
+            )
+            assert not (args.compile_fullgraph and args.split_attn), (
+                "--compile_fullgraph cannot be used with --split_attn (split attention uses dynamic control flow)"
+                " / --compile_fullgraphは--split_attnと併用できません（split attentionは動的な制御フローを使用します）"
+            )
+
         train_dataset_group.verify_bucket_reso_steps(16)  # WanVAE spatial downscale = 8 and patch size = 2
         if val_dataset_group is not None:
             val_dataset_group.verify_bucket_reso_steps(16)
@@ -98,9 +105,7 @@ class AnimaNetworkTrainer(train_network.NetworkTrainer):
 
         # Load VAE
         logger.info("Loading Anima VAE...")
-        vae = qwen_image_autoencoder_kl.load_vae(
-            args.vae, device="cpu", disable_mmap=True, spatial_chunk_size=args.vae_chunk_size, disable_cache=args.vae_disable_cache
-        )
+        vae = anima_train_utils.load_qwen_image_vae(args, device="cpu", disable_mmap=True)
         vae.to(weight_dtype)
         vae.eval()
 
@@ -177,7 +182,7 @@ class AnimaNetworkTrainer(train_network.NetworkTrainer):
         return None
 
     def cache_text_encoder_outputs_if_needed(
-        self, args, accelerator: Accelerator, unet, vae, text_encoders, dataset: train_util.DatasetGroup, weight_dtype
+        self, args, accelerator: Accelerator, unet, vae, text_encoders, dataset: DatasetGroup, weight_dtype
     ):
         if args.cache_text_encoder_outputs:
             if not args.lowram:
@@ -200,7 +205,7 @@ class AnimaNetworkTrainer(train_network.NetworkTrainer):
                 tokenize_strategy = strategy_base.TokenizeStrategy.get_strategy()
                 text_encoding_strategy = strategy_base.TextEncodingStrategy.get_strategy()
 
-                prompts = train_util.load_prompts(args.sample_prompts)
+                prompts = sampling.load_prompts(args.sample_prompts)
                 sample_prompts_te_outputs = {}
                 with accelerator.autocast(), torch.no_grad():
                     for prompt_dict in prompts:
@@ -389,13 +394,16 @@ class AnimaNetworkTrainer(train_network.NetworkTrainer):
         return loss
 
     def get_sai_model_spec(self, args):
-        return train_util.get_sai_model_spec_dataclass(None, args, False, True, False, anima="base-v1.0").to_metadata_dict()
+        return model_io.get_sai_model_spec_dataclass(None, args, False, True, False, anima="preview").to_metadata_dict()
 
     def update_metadata(self, metadata, args):
-        metadata["ss_base_model_version"] = "anima-base-v1.0"
-        metadata["ss_model_family"] = "anima"
-        metadata["ss_model_name"] = "anima-base-v1.0"
-        metadata["ss_architecture"] = "anima-base-v1.0/lora"
+        metadata["ss_weighting_scheme"] = args.weighting_scheme
+        metadata["ss_logit_mean"] = args.logit_mean
+        metadata["ss_logit_std"] = args.logit_std
+        metadata["ss_mode_scale"] = args.mode_scale
+        metadata["ss_timestep_sampling"] = args.timestep_sampling
+        metadata["ss_sigmoid_scale"] = args.sigmoid_scale
+        metadata["ss_discrete_flow_shift"] = args.discrete_flow_shift
 
     def is_text_encoder_not_needed_for_training(self, args):
         return args.cache_text_encoder_outputs and not self.is_train_text_encoder(args)
@@ -414,12 +422,21 @@ class AnimaNetworkTrainer(train_network.NetworkTrainer):
             unet.enable_gradient_checkpointing(unsloth_offload=True)
 
         if not self.is_swapping_blocks:
-            return super().prepare_unet_with_accelerator(args, accelerator, unet)
+            model = super().prepare_unet_with_accelerator(args, accelerator, unet)
+        else:
+            model = unet
+            model = accelerator.prepare(model, device_placement=[not self.is_swapping_blocks])
+            accelerator.unwrap_model(model).move_to_device_except_swap_blocks(accelerator.device)
+            accelerator.unwrap_model(model).prepare_block_swap_before_forward()
 
-        model = unet
-        model = accelerator.prepare(model, device_placement=[not self.is_swapping_blocks])
-        accelerator.unwrap_model(model).move_to_device_except_swap_blocks(accelerator.device)
-        accelerator.unwrap_model(model).prepare_block_swap_before_forward()
+        # CUDA perf switches are independent of torch.compile; apply whenever requested.
+        compile_utils.apply_cuda_optimizations(args)
+
+        if args.compile:
+            # Apply per-block torch.compile to the DiT blocks. Reach the real Anima via
+            # unwrap_model so we mutate the underlying ModuleList regardless of any DDP wrapper.
+            dit = accelerator.unwrap_model(model)
+            compile_utils.compile_transformer(args, dit, [dit.blocks], disable_linear=self.is_swapping_blocks)
 
         return model
 
@@ -431,7 +448,7 @@ class AnimaNetworkTrainer(train_network.NetworkTrainer):
 
 def setup_parser() -> argparse.ArgumentParser:
     parser = train_network.setup_parser()
-    train_util.add_dit_training_arguments(parser)
+    args_util.add_dit_training_arguments(parser)
     anima_train_utils.add_anima_training_arguments(parser)
     # parser.add_argument("--fp8_scaled", action="store_true", help="Use scaled fp8 for DiT / DiTにスケーリングされたfp8を使う")
     parser.add_argument(
@@ -447,11 +464,14 @@ if __name__ == "__main__":
     parser = setup_parser()
 
     args = parser.parse_args()
-    train_util.verify_command_line_training_args(args)
-    args = train_util.read_config_from_file(args, parser)
+    args_util.verify_command_line_training_args(args)
+    args = args_util.read_config_from_file(args, parser)
 
     if args.attn_mode == "sdpa":
         args.attn_mode = "torch"  # backward compatibility
 
-    trainer = AnimaNetworkTrainer()
-    trainer.train(args)
+    if args.show_timesteps:
+        anima_train_utils.show_timesteps(args)
+    else:
+        trainer = AnimaNetworkTrainer()
+        trainer.train(args)

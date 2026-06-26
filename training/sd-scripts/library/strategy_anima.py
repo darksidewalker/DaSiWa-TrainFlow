@@ -1,14 +1,15 @@
-# Anima Strategy Classes
+﻿# Anima Strategy Classes
 
 import os
 import random
 from typing import Any, List, Optional, Tuple, Union
-from pathlib import Path
 
 import numpy as np
 import torch
 
-from library import anima_utils, train_util
+from library import anima_utils
+import library.accelerator_setup as accelerator_setup
+import library.device_utils as device_utils
 from library.strategy_base import LatentsCachingStrategy, TextEncodingStrategy, TokenizeStrategy, TextEncoderOutputsCachingStrategy
 from library import qwen_image_autoencoder_kl
 
@@ -167,10 +168,7 @@ class AnimaTextEncoderOutputsCachingStrategy(TextEncoderOutputsCachingStrategy):
         super().__init__(cache_to_disk, batch_size, skip_disk_cache_validity_check, is_partial)
 
     def get_outputs_npz_path(self, image_abs_path: str) -> str:
-        path = Path(image_abs_path)
-        cache_dir = path.parent / "cache_text_encoder"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        return str(cache_dir / (path.stem + self.ANIMA_TEXT_ENCODER_OUTPUTS_NPZ_SUFFIX))
+        return os.path.splitext(image_abs_path)[0] + self.ANIMA_TEXT_ENCODER_OUTPUTS_NPZ_SUFFIX
 
     def is_disk_cached_outputs_expected(self, npz_path: str) -> bool:
         if not self.cache_to_disk:
@@ -268,11 +266,7 @@ class AnimaLatentsCachingStrategy(LatentsCachingStrategy):
         return self.ANIMA_LATENTS_NPZ_SUFFIX
 
     def get_latents_npz_path(self, absolute_path: str, image_size: Tuple[int, int]) -> str:
-        path = Path(absolute_path)
-        cache_dir = path.parent / "latent_cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        file_name = f"{path.stem}_{image_size[0]:04d}x{image_size[1]:04d}{self.ANIMA_LATENTS_NPZ_SUFFIX}"
-        return str(cache_dir / file_name)
+        return os.path.splitext(absolute_path)[0] + f"_{image_size[0]:04d}x{image_size[1]:04d}" + self.ANIMA_LATENTS_NPZ_SUFFIX
 
     def is_disk_cached_latents_expected(self, bucket_reso: Tuple[int, int], npz_path: str, flip_aug: bool, alpha_mask: bool):
         return self._default_is_disk_cached_latents_expected(8, bucket_reso, npz_path, flip_aug, alpha_mask, multi_resolution=True)
@@ -306,5 +300,5 @@ class AnimaLatentsCachingStrategy(LatentsCachingStrategy):
             encode_by_vae, vae_device, vae_dtype, image_infos, flip_aug, alpha_mask, random_crop, multi_resolution=True
         )
 
-        if not train_util.HIGH_VRAM:
-            train_util.clean_memory_on_device(vae_device)
+        if not accelerator_setup.HIGH_VRAM:
+            device_utils.clean_memory_on_device(vae_device)

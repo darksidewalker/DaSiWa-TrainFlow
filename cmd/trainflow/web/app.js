@@ -154,6 +154,7 @@ const pathRoots = document.getElementById("pathRoots");
 const pathEntries = document.getElementById("pathEntries");
 const architectureButtons = Array.from(document.querySelectorAll(".architecture-button"));
 const profileFields = Array.from(document.querySelectorAll(".profile-field"));
+const optimizerLrFields = Array.from(document.querySelectorAll(".optimizer-lr-field"));
 const datasetPrepTitle = document.getElementById("datasetPrepTitle");
 const imageDatasetPrep = document.getElementById("imageDatasetPrep");
 const videoDatasetPrep = document.getElementById("videoDatasetPrep");
@@ -250,6 +251,7 @@ function applySettings(data) {
   }
   syncVideoNormalizerProxiesFromSettings();
   setArchitecture(data.architecture || "anima", false);
+  updateOptimizerLrFields();
 }
 
 function normalizeArchitecture(value) {
@@ -499,6 +501,14 @@ function normalizeOptimizerLearningRate() {
     els.learning_rate.value = "1.0";
   } else if (!els.learning_rate.value || els.learning_rate.value === "1.0") {
     els.learning_rate.value = "1e-4";
+  }
+  updateOptimizerLrFields();
+}
+
+function updateOptimizerLrFields() {
+  const isProdigy = els.optimizer.value === "Prodigy";
+  for (const field of optimizerLrFields) {
+    field.classList.toggle("hidden", isProdigy);
   }
 }
 

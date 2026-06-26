@@ -1,6 +1,7 @@
 import argparse
 import math
 import os
+from library import device_utils
 import numpy as np
 import toml
 import json
@@ -14,7 +15,8 @@ from tqdm import tqdm
 from PIL import Image
 from safetensors.torch import save_file
 
-from library import flux_models, flux_utils, strategy_base, train_util
+from library import flux_models, flux_utils, strategy_base, checkpoint_io, sampling
+import library.model_io as model_io
 from library.device_utils import init_ipex, clean_memory_on_device
 from library.safetensors_utils import mem_eff_save_file
 
@@ -73,7 +75,7 @@ def sample_images(
         controlnet = accelerator.unwrap_model(controlnet)
     # print([(te.parameters().__next__().device if te is not None else None) for te in text_encoders])
 
-    prompts = train_util.load_prompts(args.sample_prompts)
+    prompts = sampling.load_prompts(args.sample_prompts)
 
     save_dir = args.output_dir + "/sample"
     os.makedirs(save_dir, exist_ok=True)
@@ -529,6 +531,94 @@ def get_noisy_model_input_and_timesteps(
     return noisy_model_input.to(dtype), timesteps.to(dtype), sigmas
 
 
+# timestep_sampling values whose distribution actually depends on --discrete_flow_shift.
+# "shift" uses it explicitly; "sigma" uses it via the shifted scheduler.timesteps. The others
+# ("uniform", "sigmoid", "flux_shift") ignore discrete_flow_shift entirely. This is shared by both
+# FLUX and Anima since Anima reuses get_noisy_model_input_and_timesteps below.
+_SHIFT_AWARE_TIMESTEP_SAMPLING = ("sigma", "shift")
+
+
+def get_timestep_sampling_info(args) -> str:
+    """One-line, human-readable summary of the timestep sampling config.
+
+    Makes it explicit whether ``--discrete_flow_shift`` actually affects the distribution for the chosen
+    ``--timestep_sampling`` (the core confusion behind issue #2383).
+    """
+    sampling = args.timestep_sampling
+    parts = [f"timestep_sampling={sampling}"]
+    if sampling in _SHIFT_AWARE_TIMESTEP_SAMPLING:
+        parts.append(f"discrete_flow_shift={args.discrete_flow_shift} (applied)")
+    else:
+        parts.append(
+            f"discrete_flow_shift={args.discrete_flow_shift} (IGNORED for timestep_sampling='{sampling}'; "
+            "only 'sigma' and 'shift' use it)"
+        )
+    if sampling in ("sigmoid", "shift", "flux_shift"):
+        parts.append(f"sigmoid_scale={args.sigmoid_scale}")
+    if sampling == "sigma":
+        parts.append(f"weighting_scheme={args.weighting_scheme}")
+    return ", ".join(parts)
+
+
+def log_timestep_sampling_info(args):
+    """Log the timestep sampling config once at training start (shared by FLUX and Anima)."""
+    logger.info(f"Timestep sampling: {get_timestep_sampling_info(args)}")
+
+
+def parse_show_timesteps_latent_size(args, vae_compression: int = 8) -> Tuple[int, int]:
+    """Parse ``--show_timesteps_resolution`` (``H`` or ``H,W`` pixels) into latent (h, w) dims.
+
+    A single value is used for both H and W; two values are H,W (W,H gives the same result since
+    flux_shift only depends on the token count). The VAE spatial compression is 8 for both FLUX and Anima.
+    """
+    res = getattr(args, "show_timesteps_resolution", None) or "1024"
+    vals = [int(v.strip()) for v in str(res).split(",") if v.strip() != ""]
+    if len(vals) == 1:
+        height = width = vals[0]
+    elif len(vals) == 2:
+        height, width = vals[0], vals[1]
+    else:
+        raise ValueError(f"--show_timesteps_resolution must be 'H' or 'H,W', got: {res}")
+    return height // vae_compression, width // vae_compression
+
+
+def show_timesteps(args):
+    """Visualize the actual sampled-timestep / loss-weighting distribution for the current FLUX settings, then return.
+
+    Builds a weight-free scheduler and repeatedly calls ``get_noisy_model_input_and_timesteps`` with dummy
+    latents so the distribution reflects ``--timestep_sampling`` / ``--discrete_flow_shift`` / ``--weighting_scheme`` etc.
+    """
+    from library import sd3_train_utils, timestep_visualization
+
+    num_train_timesteps = 1000
+    noise_scheduler = sd3_train_utils.FlowMatchEulerDiscreteScheduler(
+        num_train_timesteps=num_train_timesteps, shift=args.discrete_flow_shift
+    )
+    # latent size for the assumed image resolution (flux_shift reads h, w for the packed-size shift)
+    h, w = parse_show_timesteps_latent_size(args)
+    device, dtype = device_utils.get_preferred_device(), torch.float32
+
+    def sample_timesteps(bsz):
+        latents = torch.zeros(bsz, 16, h, w, dtype=dtype, device=device)
+        noise = torch.ones_like(latents)
+        _, timesteps, _ = get_noisy_model_input_and_timesteps(args, noise_scheduler, latents, noise, device, dtype)
+        return timesteps
+
+    def compute_weighting(timesteps):
+        if args.model_prediction_type != "sigma_scaled":
+            return None
+        sigmas = timesteps / num_train_timesteps
+        return compute_loss_weighting_for_sd3(args.weighting_scheme, sigmas)
+    header = (
+        "Timestep distribution / タイムステップ分布:\n  "
+        + get_timestep_sampling_info(args)
+        + f", resolution={args.show_timesteps_resolution} (latent {h}x{w}), model_prediction_type={args.model_prediction_type}"
+    )
+    timestep_visualization.show_timestep_distribution(
+        args.show_timesteps, sample_timesteps, compute_weighting, num_train_timesteps=num_train_timesteps, header=header
+    )
+
+
 def apply_model_prediction_type(args, model_pred, noisy_model_input, sigmas):
     weighting = None
     if args.model_prediction_type == "raw":
@@ -575,10 +665,10 @@ def save_flux_model_on_train_end(
     args: argparse.Namespace, save_dtype: torch.dtype, epoch: int, global_step: int, flux: flux_models.Flux
 ):
     def sd_saver(ckpt_file, epoch_no, global_step):
-        sai_metadata = train_util.get_sai_model_spec(None, args, False, False, False, is_stable_diffusion_ckpt=True, flux="dev")
+        sai_metadata = model_io.get_sai_model_spec(None, args, False, False, False, is_stable_diffusion_ckpt=True, flux="dev")
         save_models(ckpt_file, flux, sai_metadata, save_dtype, args.mem_eff_save)
 
-    train_util.save_sd_model_on_train_end_common(args, True, True, epoch, global_step, sd_saver, None)
+    checkpoint_io.save_sd_model_on_train_end_common(args, True, True, epoch, global_step, sd_saver, None)
 
 
 # epochとstepの保存、メタデータにepoch/stepが含まれ引数が同じになるため、統合している
@@ -594,10 +684,10 @@ def save_flux_model_on_epoch_end_or_stepwise(
     flux: flux_models.Flux,
 ):
     def sd_saver(ckpt_file, epoch_no, global_step):
-        sai_metadata = train_util.get_sai_model_spec(None, args, False, False, False, is_stable_diffusion_ckpt=True, flux="dev")
+        sai_metadata = model_io.get_sai_model_spec(None, args, False, False, False, is_stable_diffusion_ckpt=True, flux="dev")
         save_models(ckpt_file, flux, sai_metadata, save_dtype, args.mem_eff_save)
 
-    train_util.save_sd_model_on_epoch_end_or_stepwise_common(
+    checkpoint_io.save_sd_model_on_epoch_end_or_stepwise_common(
         args,
         on_epoch_end,
         accelerator,

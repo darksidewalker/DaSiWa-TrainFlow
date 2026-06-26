@@ -7,14 +7,16 @@ import os
 import time
 from typing import Optional
 
+from library import device_utils
 import numpy as np
 import torch
-from accelerate import Accelerator
+from accelerate import Accelerator, PartialState
 from tqdm import tqdm
 from PIL import Image
 
 from library.device_utils import init_ipex, clean_memory_on_device, synchronize_device
-from library import anima_models, anima_utils, train_util, qwen_image_autoencoder_kl
+from library import anima_models, anima_utils, checkpoint_io, sampling, qwen_image_autoencoder_kl
+import library.model_io as model_io
 
 init_ipex()
 
@@ -135,6 +137,89 @@ def add_anima_training_arguments(parser: argparse.ArgumentParser):
         help="Disable internal VAE caching mechanism to reduce memory usage. Encoding / decoding will also be faster, but this differs from official behavior."
         + " / VAEのメモリ使用量を減らすために内部のキャッシュ機構を無効にします。エンコード/デコードも速くなりますが、公式の動作とは異なります。",
     )
+    parser.add_argument(
+        "--qwen_image_vae_2d",
+        action="store_true",
+        help="Use the image-only 2D Qwen-Image VAE implementation. Official Qwen-Image VAE weights are converted on load."
+        + " / 画像専用の2D Qwen-Image VAE実装を使用します。公式Qwen-Image VAEの重みはロード時に変換されます。",
+    )
+
+    # torch.compile (per-block compilation, Triton required). Independent of the legacy
+    # accelerate-based --torch_compile; the two cannot be used together.
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Enable per-block torch.compile for the DiT (requires Triton). Cannot be used with --torch_compile."
+        + " / DiTのブロック単位でtorch.compileを有効にする（Tritonが必要）。--torch_compileとは併用できません。",
+    )
+    parser.add_argument(
+        "--compile_backend",
+        type=str,
+        default="inductor",
+        help="torch.compile backend (default: inductor) / torch.compileのバックエンド（デフォルト: inductor）",
+    )
+    parser.add_argument(
+        "--compile_mode",
+        type=str,
+        default="default",
+        choices=["default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"],
+        help="torch.compile mode (default: default, recommended for training) / torch.compileのモード（デフォルト: default、学習に推奨）",
+    )
+    parser.add_argument(
+        "--compile_dynamic",
+        type=str,
+        default=None,
+        choices=["true", "false", "auto"],
+        help="Dynamic shapes mode for torch.compile (default: None, same as auto). On Windows, 'true' requires the Visual Studio 2022 C++ compiler."
+        + " / torch.compileの動的形状モード（デフォルト: None、autoと同じ）。Windowsで'true'を使うにはVisual Studio 2022のC++コンパイラが必要です。",
+    )
+    parser.add_argument(
+        "--compile_fullgraph",
+        action="store_true",
+        help="Enable fullgraph mode in torch.compile. Cannot be used with --split_attn."
+        + " / torch.compileでフルグラフモードを有効にする。--split_attnとは併用できません。",
+    )
+    parser.add_argument(
+        "--compile_cache_size_limit",
+        type=int,
+        default=None,
+        help="Set torch._dynamo.config.cache_size_limit (default: PyTorch default, typically 8-32, recommended: 32)"
+        + " / torch._dynamo.config.cache_size_limitを設定（デフォルト: PyTorchのデフォルト、通常8-32、推奨: 32）",
+    )
+    parser.add_argument(
+        "--cuda_allow_tf32",
+        action="store_true",
+        help="Allow TF32 precision on Ampere or newer GPUs (improves performance) / Ampere以降のGPUでTF32を許可する（パフォーマンス向上）",
+    )
+    parser.add_argument(
+        "--cuda_cudnn_benchmark",
+        action="store_true",
+        help="Enable cuDNN benchmark mode (may improve performance) / cuDNNのベンチマークモードを有効にする（パフォーマンスが向上する可能性がある）",
+    )
+
+
+def load_qwen_image_vae(args, device="cpu", disable_mmap: bool = True):
+    if getattr(args, "qwen_image_vae_2d", False):
+        from library import qwen_image_autoencoder_kl_2d
+
+        logger.info("Using image-only Qwen-Image 2D VAE")
+        return qwen_image_autoencoder_kl_2d.load_vae(
+            args.vae,
+            device=device,
+            disable_mmap=disable_mmap,
+            spatial_chunk_size=args.vae_chunk_size,
+            disable_cache=args.vae_disable_cache,
+        )
+
+    from library import qwen_image_autoencoder_kl
+
+    return qwen_image_autoencoder_kl.load_vae(
+        args.vae,
+        device=device,
+        disable_mmap=disable_mmap,
+        spatial_chunk_size=args.vae_chunk_size,
+        disable_cache=args.vae_disable_cache,
+    )
 
 
 # Loss weighting
@@ -155,6 +240,40 @@ def compute_loss_weighting_for_anima(weighting_scheme: str, sigmas: torch.Tensor
     else:
         weighting = torch.ones_like(sigmas)
     return weighting
+
+
+def show_timesteps(args):
+    """Visualize the actual sampled-timestep / loss-weighting distribution for the current Anima settings, then return.
+
+    Anima reuses ``flux_train_utils.get_noisy_model_input_and_timesteps`` for sampling but has its own loss weighting.
+    """
+    from library import flux_train_utils, sd3_train_utils, timestep_visualization
+
+    num_train_timesteps = 1000
+    noise_scheduler = sd3_train_utils.FlowMatchEulerDiscreteScheduler(
+        num_train_timesteps=num_train_timesteps, shift=args.discrete_flow_shift
+    )
+    h, w = flux_train_utils.parse_show_timesteps_latent_size(args)  # latent size for the assumed image resolution
+    device, dtype = device_utils.get_preferred_device(), torch.float32
+
+    def sample_timesteps(bsz):
+        latents = torch.zeros(bsz, 16, h, w, dtype=dtype, device=device)
+        noise = torch.ones_like(latents)
+        _, timesteps, _ = flux_train_utils.get_noisy_model_input_and_timesteps(args, noise_scheduler, latents, noise, device, dtype)
+        return timesteps
+
+    def compute_weighting(timesteps):
+        sigmas = timesteps / num_train_timesteps
+        return compute_loss_weighting_for_anima(args.weighting_scheme, sigmas)
+
+    header = (
+        "Timestep distribution / タイムステップ分布:\n  "
+        + flux_train_utils.get_timestep_sampling_info(args)
+        + f", resolution={args.show_timesteps_resolution} (latent {h}x{w})"
+    )
+    timestep_visualization.show_timestep_distribution(
+        args.show_timesteps, sample_timesteps, compute_weighting, num_train_timesteps=num_train_timesteps, header=header
+    )
 
 
 # Parameter groups (6 groups with separate LRs)
@@ -257,14 +376,14 @@ def save_anima_model_on_train_end(
     """Save Anima model at the end of training."""
 
     def sd_saver(ckpt_file, epoch_no, global_step):
-        sai_metadata = train_util.get_sai_model_spec_dataclass(
+        sai_metadata = model_io.get_sai_model_spec_dataclass(
             None, args, False, False, False, is_stable_diffusion_ckpt=True, anima="preview"
         ).to_metadata_dict()
         dit_sd = dit.state_dict()
         # Save with 'net.' prefix for ComfyUI compatibility
         anima_utils.save_anima_model(ckpt_file, dit_sd, sai_metadata, save_dtype)
 
-    train_util.save_sd_model_on_train_end_common(args, True, True, epoch, global_step, sd_saver, None)
+    checkpoint_io.save_sd_model_on_train_end_common(args, True, True, epoch, global_step, sd_saver, None)
 
 
 def save_anima_model_on_epoch_end_or_stepwise(
@@ -280,13 +399,13 @@ def save_anima_model_on_epoch_end_or_stepwise(
     """Save Anima model at epoch end or specific steps."""
 
     def sd_saver(ckpt_file, epoch_no, global_step):
-        sai_metadata = train_util.get_sai_model_spec_dataclass(
+        sai_metadata = model_io.get_sai_model_spec_dataclass(
             None, args, False, False, False, is_stable_diffusion_ckpt=True, anima="preview"
         ).to_metadata_dict()
         dit_sd = dit.state_dict()
         anima_utils.save_anima_model(ckpt_file, dit_sd, sai_metadata, save_dtype)
 
-    train_util.save_sd_model_on_epoch_end_or_stepwise_common(
+    checkpoint_io.save_sd_model_on_epoch_end_or_stepwise_common(
         args,
         on_epoch_end,
         accelerator,
@@ -430,7 +549,9 @@ def sample_images(
 
     dit.switch_block_swap_for_inference()
 
-    prompts = train_util.load_prompts(args.sample_prompts)
+    distributed_state = PartialState()  # for multi gpu distributed inference. this is a singleton, so it's safe to use it here
+
+    prompts = sampling.load_prompts(args.sample_prompts)
     save_dir = os.path.join(args.output_dir, "sample")
     os.makedirs(save_dir, exist_ok=True)
 
@@ -442,30 +563,44 @@ def sample_images(
     except Exception:
         pass
 
-    with torch.no_grad(), accelerator.autocast():
-        for prompt_dict in prompts:
-            dit.prepare_block_swap_before_forward()
-            if on_prompt_start is not None:
-                on_prompt_start(prompt_dict, accelerator)
-            try:
-                _sample_image_inference(
-                    accelerator,
-                    args,
-                    dit,
-                    text_encoder,
-                    vae,
-                    tokenize_strategy,
-                    text_encoding_strategy,
-                    save_dir,
-                    prompt_dict,
-                    epoch,
-                    steps,
-                    sample_prompts_te_outputs,
-                    prompt_replacement,
-                )
-            finally:
-                if on_prompt_end is not None:
-                    on_prompt_end(prompt_dict)
+    def _run_one(prompt_dict):
+        dit.prepare_block_swap_before_forward()
+        if on_prompt_start is not None:
+            on_prompt_start(prompt_dict, accelerator)
+        try:
+            _sample_image_inference(
+                accelerator,
+                args,
+                dit,
+                text_encoder,
+                vae,
+                tokenize_strategy,
+                text_encoding_strategy,
+                save_dir,
+                prompt_dict,
+                epoch,
+                steps,
+                sample_prompts_te_outputs,
+                prompt_replacement,
+            )
+        finally:
+            if on_prompt_end is not None:
+                on_prompt_end(prompt_dict)
+
+    if distributed_state.num_processes <= 1:
+        with torch.no_grad(), accelerator.autocast():
+            for prompt_dict in prompts:
+                _run_one(prompt_dict)
+    else:
+        # Distribute prompts across processes. Each process handles prompts[i :: num_processes].
+        per_process_prompts = []  # list of lists
+        for i in range(distributed_state.num_processes):
+            per_process_prompts.append(prompts[i :: distributed_state.num_processes])
+
+        with torch.no_grad(), accelerator.autocast():
+            with distributed_state.split_between_processes(per_process_prompts) as prompt_dict_lists:
+                for prompt_dict in prompt_dict_lists[0]:
+                    _run_one(prompt_dict)
 
     # Restore RNG state
     torch.set_rng_state(rng_state)

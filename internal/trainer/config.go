@@ -210,10 +210,12 @@ func writeSDXLTrainingTOML(content *strings.Builder, projectName string, s Setti
 	content.WriteString("gradient_checkpointing = true\n")
 	content.WriteString("max_grad_norm = 1.0\n")
 	content.WriteString(fmt.Sprintf("learning_rate = %s\n", s.LearningRate))
-	content.WriteString(fmt.Sprintf("unet_lr = %s\n", nonEmpty(s.UNetLR, s.LearningRate)))
-	if !s.TrainUNetOnly {
-		content.WriteString(fmt.Sprintf("text_encoder_lr1 = %s\n", nonEmpty(s.TextEncoderLR1, "1e-5")))
-		content.WriteString(fmt.Sprintf("text_encoder_lr2 = %s\n", nonEmpty(s.TextEncoderLR2, "1e-5")))
+	if s.Optimizer != "Prodigy" {
+		content.WriteString(fmt.Sprintf("unet_lr = %s\n", nonEmpty(s.UNetLR, s.LearningRate)))
+		if !s.TrainUNetOnly {
+			content.WriteString(fmt.Sprintf("text_encoder_lr1 = %s\n", nonEmpty(s.TextEncoderLR1, "1e-5")))
+			content.WriteString(fmt.Sprintf("text_encoder_lr2 = %s\n", nonEmpty(s.TextEncoderLR2, "1e-5")))
+		}
 	}
 	content.WriteString(fmt.Sprintf("optimizer_type = %s\n", tomlString(s.Optimizer)))
 	content.WriteString("optimizer_args = [")

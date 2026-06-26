@@ -1,10 +1,5 @@
 logs
-output
-intermediate_checkpoints
 __pycache__
-*.safetensors
-*.ckpt
-*.pth
 wd14_tagger_model
 venv
 *.egg-info
@@ -13,6 +8,7 @@ build
 wandb
 CLAUDE.md
 GEMINI.md
+AGENTS.md
 .claude
 .gemini
 MagicMock
