@@ -80,6 +80,25 @@ p {
   color: var(--teal);
 }
 
+.header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.hw-badge {
+  font-size: 13px;
+  color: var(--teal);
+  font-weight: 700;
+}
+
+.gpu-badge {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 12px;
+}
+
 .actions {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -105,10 +124,25 @@ p {
   display: grid;
   gap: 8px;
   margin: 0 0 14px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(24, 27, 32, 0.72);
+}
+
+/* Vendor-colored panel borders */
+.torch-panel.backend-nvidia {
+  border-color: rgba(118, 185, 0, 0.5);
+  box-shadow: 0 0 0 1px rgba(118, 185, 0, 0.15);
+}
+
+.torch-panel.backend-amd {
+  border-color: rgba(255, 95, 75, 0.5);
+  box-shadow: 0 0 0 1px rgba(255, 95, 75, 0.15);
+}
+
+.torch-panel.backend-existing {
+  border-color: rgba(154, 164, 178, 0.4);
 }
 
 .torch-panel label {
@@ -118,12 +152,57 @@ p {
 
 .torch-panel select {
   min-height: 42px;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: 8px;
   background: #252b33;
   color: var(--text);
   font: inherit;
-  padding: 0 10px;
+  font-size: 14px;
+  padding: 0 12px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1.5l5 5 5-5' stroke='%239aa4b2' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.torch-panel select:hover {
+  border-color: rgba(154, 164, 178, 0.5);
+}
+
+.torch-panel select:focus {
+  outline: none;
+}
+
+/* NVIDIA green border */
+.torch-panel.backend-nvidia select {
+  border-color: rgba(118, 185, 0, 0.6);
+}
+.torch-panel.backend-nvidia select:focus {
+  border-color: #76b900;
+  box-shadow: 0 0 0 2px rgba(118, 185, 0, 0.2);
+}
+
+/* AMD red/orange border */
+.torch-panel.backend-amd select {
+  border-color: rgba(255, 95, 75, 0.6);
+}
+.torch-panel.backend-amd select:focus {
+  border-color: #ff5f4b;
+  box-shadow: 0 0 0 2px rgba(255, 95, 75, 0.2);
+}
+
+/* Existing/neutral */
+.torch-panel.backend-existing select {
+  border-color: rgba(154, 164, 178, 0.4);
+}
+.torch-panel.backend-existing select:focus {
+  border-color: #9aa4b2;
+  box-shadow: 0 0 0 2px rgba(154, 164, 178, 0.2);
 }
 
 .warning {

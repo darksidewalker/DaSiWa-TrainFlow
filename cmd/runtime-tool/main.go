@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -11,6 +14,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -161,7 +166,119 @@ func (r *runner) status() map[string]any {
 		"logs":    r.logs,
 		"os":      runtime.GOOS,
 		"models":  modelops.CheckWithOverrides(r.root, modelOverrides(r.root)),
+		"gpu":     detectGPU(),
 	}
+}
+
+// detectGPU returns a short description of the GPU(s) found on the host.
+func detectGPU() string {
+	// Try nvidia-smi first (NVIDIA)
+	if name := nvidiaGPU(); name != "" {
+		return name
+	}
+	// Try lspci (Linux AMD/intel)
+	if runtime.GOOS == "linux" {
+		if name := lspciGPU(); name != "" {
+			return name
+		}
+	}
+	// Try PowerShell Get-WmiObject (Windows AMD/NVIDIA)
+	if runtime.GOOS == "windows" {
+		if name := windowsGPU(); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func nvidiaGPU() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "nvidia-smi", "--query-gpu=name", "--format=csv,noheader").Output()
+	if err != nil {
+		return ""
+	}
+	first := strings.TrimSpace(strings.Split(string(out), "\n")[0])
+	if first == "" {
+		return ""
+	}
+	// nvidia-smi already prefixes "NVIDIA" — don't double it
+	if !strings.HasPrefix(first, "NVIDIA") {
+		first = "NVIDIA " + first
+	}
+	// Also grab VRAM if available
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel2()
+	vramOut, err2 := exec.CommandContext(ctx2, "nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits").Output()
+	if err2 != nil {
+		return first
+	}
+	vram := strings.TrimSpace(strings.Split(string(vramOut), "\n")[0])
+	vramInt, _ := strconv.Atoi(vram)
+	if vramInt > 0 {
+		return fmt.Sprintf("%s (%d MB VRAM)", first, vramInt)
+	}
+	return first
+}
+
+func lspciGPU() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "lspci", "-nn", "-d", "1002:").Output() // AMD vendor ID
+	if err != nil || len(out) == 0 {
+		// Try NVIDIA via lspci as fallback
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel2()
+		out2, err2 := exec.CommandContext(ctx2, "lspci", "-nn", "-d", "10de:").Output()
+		if err2 != nil || len(out2) == 0 {
+			return ""
+		}
+		return parseLspciLine(out2)
+	}
+	return parseLspciLine(out)
+}
+
+func parseLspciLine(out []byte) string {
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		line := scanner.Text()
+		// Extract device name between ] and (
+		// e.g. "01:00.0 VGA compatible controller [0300]: Advanced Micro Devices, Inc. [AMD/ATI] Device [1002:7441] (rev c1)"
+		afterColon := strings.Index(line, ": ")
+		if afterColon < 0 {
+			continue
+		}
+		dev := line[afterColon+2:]
+		// Strip vendor prefix "Advanced Micro Devices, Inc. [AMD/ATI] " or "NVIDIA Corporation "
+		// Keep the last meaningful part
+		return dev
+	}
+	return ""
+}
+
+func windowsGPU() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "powershell.exe", "-Command",
+		"Get-CimInstance -ClassName Win32_VideoController | Select-Object -ExpandProperty Name").Output()
+	if err != nil || len(out) == 0 {
+		return ""
+	}
+	// Grab first GPU line
+	first := strings.TrimSpace(strings.Split(string(out), "\n")[0])
+	// Strip trailing empty lines
+	for strings.TrimSpace(first) == "" {
+		rest := strings.SplitN(string(out), "\n", 2)
+		if len(rest) < 2 {
+			return ""
+		}
+		first = strings.TrimSpace(rest[1])
+		break
+	}
+	if first == "" {
+		return ""
+	}
+	return first
 }
 
 func modelOverrides(root string) map[string]string {
