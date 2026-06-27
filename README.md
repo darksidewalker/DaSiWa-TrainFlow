@@ -111,13 +111,17 @@ The UI opens at `http://127.0.0.1:7860` (or open it manually if your browser doe
 - Platform-specific portable Python (`python_embeded/windows` or `python_embeded/linux`)
 - uv-first dependency installation with pip fallback
 - PyTorch backend selector: CUDA 13.0 by default, experimental ROCm 6.4, or existing user-managed PyTorch
+- GPU auto-detection (NVIDIA via `nvidia-smi`, AMD via `lspci`/sysfs/PowerShell) with vendor badge in the header
+- Vendor-colored backend selector panel (green for NVIDIA/CUDA, red for AMD/ROCm) with mismatch warnings
 
-> **ROCm / custom PyTorch warning:** CUDA 13.0 remains the fully supported default. The ROCm and existing-PyTorch runtime modes are advanced/experimental and are intended for users who already know their PyTorch build works with their hardware. When ROCm or existing PyTorch is selected, TrainFlow disables CUDA-only optional installers such as Flash Attention and Anima `torch.compile`/Triton deps. NVIDIA-only GPU monitoring through `nvidia-smi` is also unavailable.
+> **ROCm / custom PyTorch warning:** CUDA 13.0 remains the fully supported default. The ROCm and existing-PyTorch runtime modes are advanced/experimental and are intended for users who already know their PyTorch build works with their hardware. When ROCm or existing PyTorch is selected, TrainFlow disables CUDA-only optional installers such as Flash Attention and Anima `torch.compile`/Triton deps. Note that AMD GPU monitoring on Linux works via kernel sysfs and does not require ROCm.
 
 ### Hardware Monitoring
 - Compact overlay inside the sampler panel
 - CPU usage, RAM usage, CPU temperature (when available)
 - NVIDIA GPU utilization, memory, temperature, and active task labels (via `nvidia-smi`)
+- AMD GPU monitoring on Linux via `amdgpu` sysfs (utilization, VRAM, temperature, power, frequency — kernel driver only, no ROCm needed)
+- AMD GPU detection on Windows via WMI (name and VRAM total)
 
 ---
 
@@ -180,9 +184,10 @@ curl -L -o models/u2net/u2net.onnx https://github.com/danielgatis/rembg/releases
 
 | Requirement | Notes |
 |-------------|-------|
-| **NVIDIA GPU** | Recommended for training |
+| **GPU** | NVIDIA (CUDA) recommended; AMD (ROCm 6.4) supported on Linux |
 | **Python 3.12** | Recommended on Linux for the embedded runtime |
-| **nvidia-smi** | Needed for GPU monitoring overlay |
+| **nvidia-smi** | Needed for NVIDIA GPU monitoring overlay |
+| **amdgpu kernel driver** | Needed for AMD GPU monitoring on Linux (sysfs) |
 | **Go 1.22+** | Only when building from source |
 
 </details>
