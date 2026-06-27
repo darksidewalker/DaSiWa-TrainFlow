@@ -243,4 +243,4 @@ Do not commit `python_embeded/` to Git — the runtime contains thousands of fil
 
 ## Credits
 
-Based on the original [Anima TrainFlow](https://github.com/ThetaCursed/Anima-TrainFlow) by ThetaCursed and its modified `sd-scripts` training stack. This fork adds the Go portable shell, runtime updater, path picker, hardware overlay, resume workflow, and Musubi video training integration.
+Built on the [`sd-scripts`](https://github.com/kohya-ss/sd-scripts) training stack. Video training powered by [musubi-tuner](https://github.com/kohya-ss/musubi-tuner). The original [Anima TrainFlow](https://github.com/ThetaCursed/Anima-TrainFlow) by ThetaCursed inspired the portable trainer concept.
