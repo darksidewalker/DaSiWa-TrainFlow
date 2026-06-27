@@ -1,281 +1,239 @@
 # DaSiWa TrainFlow
 
-DaSiWa TrainFlow is a portable Go shell for training LoRAs on Anima, SDXL-family models such as Pony and Illustrious, and now video-training workflows for LTX 2.3 and Wan 2.2. It wraps the existing Python/`sd-scripts` stack with a modern embedded UI, clickable path pickers, dataset prep tools, Musubi video normalization, resumable training, live preview refresh, and a compact hardware monitor for Linux and Windows.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/darksidewalker/DaSiWa-TrainFlow/blob/main/LICENSE)
+[![Go Version](https://img.shields.io/badge/Go-1.22-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev/)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+[![Platforms](https://img.shields.io/badge/Platforms-Linux%20%7C%20Windows-E34F26?style=flat&logo=gnu&logoColor=white)](https://github.com/darksidewalker/DaSiWa-TrainFlow)
+[![GitHub Stars](https://img.shields.io/github/stars/darksidewalker/DaSiWa-TrainFlow?style=flat)](https://github.com/darksidewalker/DaSiWa-TrainFlow/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/darksidewalker/DaSiWa-TrainFlow?style=flat)](https://github.com/darksidewalker/DaSiWa-TrainFlow/network/members)
+[![GitHub Issues](https://img.shields.io/github/issues/darksidewalker/DaSiWa-TrainFlow?style=flat)](https://github.com/darksidewalker/DaSiWa-TrainFlow/issues)
+
+> Portable Go wrapper around the `sd-scripts` Python training stack — train LoRAs for Anima, SDXL/Pony/Illustrious, and LTX 2.3/Wan 2.2 video from a single embedded UI on Linux and Windows.
 
 ![TrainFlow preview](assets/DaSiWa-TrainFlow.webp)
 
-Repository: <https://github.com/darksidewalker/DaSiWa-TrainFlow>
+---
 
-## Quick Download
+## Quick Start
 
-Linux with Git:
-
+**Linux (with Git)**
 ```bash
-git clone --depth 1 https://github.com/darksidewalker/DaSiWa-TrainFlow.git && cd DaSiWa-TrainFlow && chmod +x TrainFlow TrainFlow_Runtime_Tool && ./TrainFlow_Runtime_Tool
+git clone --depth 1 https://github.com/darksidewalker/DaSiWa-TrainFlow.git && cd DaSiWa-TrainFlow
+chmod +x TrainFlow TrainFlow_Runtime_Tool && ./TrainFlow_Runtime_Tool
 ```
 
-Linux without Git:
-
+**Linux (without Git)**
 ```bash
-curl -L -o TrainFlow.zip https://github.com/darksidewalker/DaSiWa-TrainFlow/archive/refs/heads/main.zip && unzip TrainFlow.zip && cd DaSiWa-TrainFlow-main && chmod +x TrainFlow TrainFlow_Runtime_Tool && ./TrainFlow_Runtime_Tool
+curl -L -o TrainFlow.zip https://github.com/darksidewalker/DaSiWa-TrainFlow/archive/refs/heads/main.zip
+unzip TrainFlow.zip && cd DaSiWa-TrainFlow-main
+chmod +x TrainFlow TrainFlow_Runtime_Tool && ./TrainFlow_Runtime_Tool
 ```
 
-Windows PowerShell with Git:
-
+**Windows PowerShell (with Git)**
 ```powershell
-git clone --depth 1 https://github.com/darksidewalker/DaSiWa-TrainFlow.git; cd DaSiWa-TrainFlow; .\TrainFlow_Runtime_Tool.exe
-```
-
-Windows PowerShell without Git:
-
-```powershell
-Invoke-WebRequest -Uri https://github.com/darksidewalker/DaSiWa-TrainFlow/archive/refs/heads/main.zip -OutFile TrainFlow.zip; Expand-Archive TrainFlow.zip -Force; cd DaSiWa-TrainFlow-main; .\TrainFlow_Runtime_Tool.exe
-```
-
-The runtime tool opens a local installer UI. Click **Verify Runtime** first if you downloaded a fully bundled build. Click **Update Runtime** for a fresh platform runtime, or **Install Requirements** if Python is already present but dependencies need repair.
-
-## Run
-
-Linux:
-
-```bash
-./TrainFlow
-```
-
-Windows:
-
-```powershell
-.\TrainFlow.exe
-```
-
-Open the UI at `http://127.0.0.1:7860` if your browser does not open automatically.
-
-## Runtime Tool
-
-Linux:
-
-```bash
-./TrainFlow_Runtime_Tool
-```
-
-Windows:
-
-```powershell
+git clone --depth 1 https://github.com/darksidewalker/DaSiWa-TrainFlow.git; cd DaSiWa-TrainFlow
 .\TrainFlow_Runtime_Tool.exe
 ```
 
-The runtime tool:
-
-- creates or updates `python_embeded`
-- uses `python_embeded/windows` on Windows
-- uses `python_embeded/linux` on Linux
-- installs `uv` into that runtime
-- installs dependencies into the embedded/local runtime with `uv pip install --python ...`
-- falls back to `python -m pip install` if uv fails
-- installs PyTorch CUDA 13.0 wheels from `https://download.pytorch.org/whl/cu130`
-
-Windows uses the official Python 3.12.10 embeddable package. Linux creates a local `python_embeded/linux` venv using `python3.12` when available, otherwise `python3`. The app still supports the old flat `python_embeded` folder as a fallback, but platform-specific folders are the shipping layout.
-
-## Shipping Runtime Files
-
-Do not commit `python_embeded/` to Git. It is intentionally ignored because the local runtime can contain many thousands of files plus very large ML wheels, which quickly hits GitHub file and repository limits.
-
-For normal installs, ship the root binaries and let the runtime tool create the platform runtime on the user's machine:
-
-- Windows: `TrainFlow.exe` and `TrainFlow_Runtime_Tool.exe`
-- Linux: `TrainFlow` and `TrainFlow_Runtime_Tool`
-
-If a platform runtime is missing, the user can open `TrainFlow_Runtime_Tool` and click **Update Runtime** once. That creates or updates `python_embeded/windows` on Windows and `python_embeded/linux` on Linux.
-
-If you need a fully offline/prebuilt package, create a release ZIP or 7z outside Git that contains the binaries plus the matching `python_embeded/<platform>` folder. Upload that archive as a GitHub Release asset or host it separately. Compressing the runtime into the Go executable is not recommended: the archive would still be huge, platform-specific, slow to build, and would need to be unpacked before Python and native wheels can run.
-
-## Build From Source
-
-You do not need this for normal use if the repo ships the portable binaries. Use this only when changing Go code or rebuilding release artifacts.
-
-Linux app binaries:
-
-```bash
-go build -trimpath -ldflags="-s -w" -o TrainFlow ./cmd/trainflow
-go build -trimpath -ldflags="-s -w" -o TrainFlow_Runtime_Tool ./cmd/runtime-tool
-```
-
-Windows and Linux release binaries from Windows PowerShell:
-
+**Windows PowerShell (without Git)**
 ```powershell
-.\build.ps1
+Invoke-WebRequest -Uri https://github.com/darksidewalker/DaSiWa-TrainFlow/archive/refs/heads/main.zip -OutFile TrainFlow.zip
+Expand-Archive TrainFlow.zip -Force; cd DaSiWa-TrainFlow-main
+.\TrainFlow_Runtime_Tool.exe
 ```
 
-Outputs include:
+The runtime tool opens a local installer UI at `http://127.0.0.1:7870`. Click **Verify Runtime** first if you downloaded a bundled build, then **Update Runtime** or **Install Requirements** as needed.
 
-```text
-TrainFlow
-TrainFlow.exe
-TrainFlow_Runtime_Tool
-TrainFlow_Runtime_Tool.exe
-dist/trainflow-linux-amd64
-dist/trainflow-windows-amd64.exe
-dist/trainflow-runtime-tool-linux-amd64
-dist/trainflow-runtime-tool-windows-amd64.exe
-```
+Once the runtime is ready, launch the trainer:
 
-## Workflow
+| Platform | Command |
+|----------|---------|
+| Linux    | `./TrainFlow` |
+| Windows  | `.\TrainFlow.exe` |
 
-1. Run the runtime tool and install/update dependencies.
-2. Run `TrainFlow` or `TrainFlow.exe`.
-3. Choose the training profile: **Anima** or **SDXL / Pony / Illustrious**.
-4. Use the Browse buttons to select model files and dataset folders.
-4. Choose the training profile: **Anima**, **SDXL / Pony / Illustrious**, or **LTX 2.3 / Wan 2.2** for Musubi video training.
-5. For LTX/WAN, use the video normalization controls to set FFmpeg/Musubi flags, then let TrainFlow generate the Musubi dataset TOML and cache text/latents automatically when you change parameters, captions, or source videos.
-6. Set trigger word, rank, optimizer, steps, and preview settings, or click **Auto Calc** for a profile-aware starting point.
-7. Click **Start**.
-8. Click **Quit** in the top bar when you want to terminate the local TrainFlow server.
+The UI opens at `http://127.0.0.1:7860` (or open it manually if your browser doesn't launch).
 
-### LTX 2.3 / Wan 2.2 Musubi Video Training
+---
 
-TrainFlow now includes a Musubi-focused workflow for LTX 2.3 and Wan 2.2:
+## Training Workflow
 
-- The Dataset Prep area switches from image-specific prep to video normalization controls when you select LTX 2.3 or Wan 2.2.
-- The video normalizer exposes FFmpeg/Musubi flags such as width, height, FPS, duration, codec, quality, encoder preset, speed, skip frames, audio, and worker count.
-- TrainFlow auto-generates the Musubi dataset TOML when settings are saved or when the relevant prep actions run.
-- Changing video parameters, captions, source videos, or the scope/output path marks the Musubi cache as dirty so the pipeline rebuilds what it needs.
-- The canonical output/scope path is used for Musubi TOML, caches, and LoRA checkpoint output instead of a hardcoded output folder.
-- The LTX/WAN Start flow runs the full sequencer: normalize video → build TOML → cache text → cache latents → train.
+1. Run the **Runtime Tool** and install/update dependencies.
+2. Launch **TrainFlow** and choose a training profile: **Anima**, **SDXL / Pony / Illustrious**, or **LTX 2.3 / Wan 2.2**.
+3. Use the **Browse** buttons to select model files and dataset folders.
+4. For video training (LTX/WAN), configure the normalizer (resolution, FPS, duration, etc.) — TrainFlow auto-generates the Musubi dataset TOML and caches text/latents when parameters change.
+5. Set trigger word, rank, optimizer, steps, and preview settings — or click **Auto Calc** for a profile-aware starting point based on your dataset size.
+6. Click **Start**.
+7. Click **Quit** in the top bar when finished.
 
-The Musubi video tooling uses the vendored fork under `training/musubi-tuner/`.
+---
 
 ## Training Profiles
 
-TrainFlow keeps separate profile logic for Anima, SDXL / Pony / Illustrious, and LTX / Wan Musubi video training:
+| Profile | Model Path | Network | Bucket Step | Notes |
+|---------|-----------|---------|-------------|-------|
+| **Anima** | DiT + Qwen3 + VAE | `networks.lora_anima` | 64px | DiT/Qwen3 text encoder, Anima metadata |
+| **SDXL / Pony / Illustrious** | checkpoint (+ optional VAE) | `networks.lora` | 32px | UNet/text-encoder LR fields, SDPA by default |
+| **LTX 2.3 / Wan 2.2** | video checkpoint | Musubi pipeline | — | Auto TOML, video normalization, sequenced pipeline |
 
-- **Anima** uses the DiT, Qwen3 text encoder, and VAE paths, `networks.lora_anima`, 64px bucket steps, and Anima metadata.
-- **SDXL / Pony / Illustrious** uses a checkpoint path, `networks.lora`, 32px bucket steps, SDXL token settings, and SDXL-style UNet/text-encoder learning-rate fields.
-- **LTX / WAN Musubi video training** adds automatic TOML generation, video normalization controls, and pipeline sequencing for LTX 2.3 / Wan 2.2.
-- **Scope/output path routing** ensures the Musubi TOML, caches, and LoRA checkpoints use the selected output root instead of a hardcoded folder.
+**Auto Calc** reads the selected profile and dataset image count, then updates rank, learning rates, batch, gradient accumulation, training steps, save interval, and sample interval. It preserves the selected optimizer (Prodigy stays on `lr=1.0` constant; AdamW/AdamW8bit stay on `1e-4` cosine).
 
-**Auto Calc** reads the selected profile and dataset image count, then updates rank, learning rates, batch, gradient accumulation, training steps, save interval, and sample interval. It preserves the selected optimizer instead of switching the training path out from under you. Prodigy keeps Prodigy math (`learning_rate = 1.0`) and exports a constant scheduler; AdamW and AdamW8bit stay on the standard `1e-4` cosine path.
+---
 
-## Resume Training
+## Features
+
+### Embedded Training GUI
+- Single portable Go binary with embedded HTML/CSS/JS — no separate web build step
+- Profile switcher for Anima, SDXL/Pony/Illustrious, and LTX 2.3/Wan 2.2
+- Clickable local path browser for datasets, model files, and resume-state folders
+- Autosaved settings in `training/settings.json` with a manual **Save** button
+- Optimizer-aware defaults for Prodigy, AdamW8bit, and AdamW
+- Training controls: rank, learning rates, batch size, steps, gradient accumulation, save/sample interval
+- SDXL-specific UNet/text-encoder learning-rate fields and **UNet only** toggle
+- Optional Anima Flash Attention and `torch.compile` (per-block DiT compilation)
+- Resume panel with automatic latest-state discovery
+- Sample prompt editor (positive/negative, width, height, CFG, seed)
+- Live training log streamed from the running process
+- Preview gallery with image overlay for browsing outputs
+- **Output** button to open the current project output folder
+
+### Dataset Prep GUI
+- WD EVA02 ONNX caption/tagging
+- LTX/WAN video normalization controls (resolution, FPS, duration, codec, quality, workers, etc.)
+- Automatic Musubi dataset TOML generation and cache rebuild triggers
+- Resize-copy helper (`training/prepared/<project>`)
+- Combined **Tag + Resize** workflow with configurable thresholds
+
+### Runtime & Model Tooling
+- Companion `TrainFlow_Runtime_Tool` at `http://127.0.0.1:7870`
+- **Verify Runtime**, **Update Runtime**, **Install Requirements**
+- **Download Models** for Anima base files; **Download Prep** for tagger/U2Net assets
+- Status pills in the main UI with quick-launch buttons
+- Platform-specific portable Python (`python_embeded/windows` or `python_embeded/linux`)
+- uv-first dependency installation with pip fallback
+- PyTorch CUDA 13.0 wheels from `https://download.pytorch.org/whl/cu130`
+
+### Hardware Monitoring
+- Compact overlay inside the sampler panel
+- CPU usage, RAM usage, CPU temperature (when available)
+- NVIDIA GPU utilization, memory, temperature, and active task labels (via `nvidia-smi`)
+
+---
+
+## Advanced
+
+<details>
+<summary><strong>Resume Training</strong> — state resume, latest-state discovery</summary>
 
 The UI includes a **Resume** panel:
 
-- **Resume training** enables `sd-scripts` state resume.
-- **Use latest saved state** searches the project output folder for the newest `*-state` directory.
-- **Resume State Path** lets you choose a specific state folder.
+- **Resume training** enables `sd-scripts` state resume
+- **Use latest saved state** auto-discovers the newest `*-state` directory in the project output folder
+- **Resume State Path** lets you pick a specific state folder manually
 
-Training configs write `save_state = true`, `save_last_n_steps_state = 1`, and `save_last_n_epochs_state = 1`, so new runs keep resumable state.
+All new runs write `save_state = true`, `save_last_n_steps_state = 1`, and `save_last_n_epochs_state = 1` so state is always available.
 
-## Anima LoRA Metadata
+</details>
 
-New LoRA files are saved with Anima-specific safetensors metadata, including `ss_base_model_version = "anima-base-v1.0"` and `modelspec.architecture = "anima-base-v1.0/lora"`.
+<details>
+<summary><strong>Anima LoRA Metadata</strong> — inspect and repair safetensors headers</summary>
 
-Some tools still guess model family from tensor names and may show unknown Anima LoRAs as SDXL if they do not support Anima yet. To inspect or repair an existing LoRA without retraining:
+New LoRA files include Anima-specific safetensors metadata (`ss_base_model_version = "anima-base-v1.0"`). To inspect or repair existing LoRAs:
 
 ```bash
 python training/sd-scripts/tools/anima_lora_metadata.py path/to/lora.safetensors
 python training/sd-scripts/tools/anima_lora_metadata.py path/to/lora.safetensors --fix
 ```
 
-## Features
+</details>
 
-### Embedded Training GUI
+<details>
+<summary><strong>Required Models</strong> — Anima base files, prep models, manual install</summary>
 
-- Single portable Go app with embedded HTML/CSS/JS; no separate web build step is needed.
-- Local browser UI at `http://127.0.0.1:7860`, with Linux and Windows binaries.
-- Profile switcher for **Anima**, **SDXL / Pony / Illustrious**, and **LTX 2.3 / Wan 2.2** training.
-- Profile-aware model path fields:
-  - Anima: DiT, Qwen3 text encoder, and VAE.
-  - SDXL: checkpoint plus optional VAE.
-- Clickable local path browser for datasets, model files, and resume-state folders.
-- Autosaved settings in `training/settings.json`, plus a manual **Save** button.
-- **Auto Calc** for a profile-aware starting point from dataset image count. It preserves paths, project name, trigger word, prompts, resume path, and the selected optimizer.
-- Optimizer-aware defaults for Prodigy, AdamW8bit, and AdamW.
-- Training controls for rank, learning rates, batch size, steps, gradient accumulation, save interval, and preview interval.
-- SDXL-specific UNet/text-encoder learning-rate fields.
-- **UNet only** training toggle, enabled by default.
-- Optional Anima Flash Attention toggle when a compatible runtime dependency is installed.
-- Resume panel for saved `sd-scripts` state folders, including automatic latest-state discovery.
-- Positive/negative sample prompt editor with width, height, CFG, and seed controls.
-- Live training log streamed from the running process.
-- Preview gallery for generated samples, with an image overlay for browsing outputs.
-- **Output** button that opens or creates the current project output folder.
-- **Start**, **Stop**, and **Quit** controls for the local training server and child process.
+Use **Download Models** in `TrainFlow_Runtime_Tool` to fetch Anima base files:
 
-### Dataset Prep GUI
-
-- WD EVA02 ONNX caption/tagging button.
-- LTX 2.3 / Wan 2.2 video normalization controls that replace the image-only prep fields for Musubi workflows.
-- Automatic Musubi dataset TOML generation plus cache rebuild triggers when video parameters, captions, or source videos change.
-- Scope/output path control for Musubi configs, caches, and LoRA checkpoint output.
-- Resize-copy helper that writes prepared datasets under `training/prepared/<project>`.
-- Combined **Tag + Resize** workflow.
-- Configurable resize min/max side, general tag threshold, character tag threshold, and caption overwrite behavior.
-- Optional prep-model status checks in the app top bar.
-
-### Runtime And Model Tooling
-
-- Companion `TrainFlow_Runtime_Tool` UI at `http://127.0.0.1:7870`.
-- **Verify Runtime**, **Update Runtime**, and **Install Requirements** actions.
-- **Download Models** for managed Anima base model files.
-- **Download Prep** for optional WD EVA02 tagger and U2Net prep assets.
-- Runtime/model status pills in the main UI, with launch buttons when setup is missing.
-- Platform-specific portable Python layout:
-  - Windows: `python_embeded/windows`
-  - Linux: `python_embeded/linux`
-- uv-first dependency installation with pip fallback.
-- Optional Flash Attention wheel install path on Linux, guarded to avoid accidental heavy source builds.
-
-### Monitoring
-
-- Compact hardware overlay inside the sampler panel.
-- CPU and RAM usage.
-- CPU temperature where the host exposes it.
-- NVIDIA GPU utilization, memory, temperature, and active TrainFlow task labels when `nvidia-smi` is available.
-
-## Required Models
-
-Use **Download Models** in `TrainFlow_Runtime_Tool` to download the required Anima files into:
-
-- `models/anima/dit/anima-base-v1.0.safetensors`
-- `models/anima/text_encoder/qwen_3_06b_base.safetensors`
-- `models/anima/vae/qwen_image_vae.safetensors`
+```
+models/anima/dit/anima-base-v1.0.safetensors
+models/anima/text_encoder/qwen_3_06b_base.safetensors
+models/anima/vae/qwen_image_vae.safetensors
+```
 
 Use **Download Prep** for optional dataset-prep models:
 
-- `models/wd-eva02-large-tagger-v3/model.onnx`
-- `models/wd-eva02-large-tagger-v3/selected_tags.csv`
-- `models/wd-eva02-large-tagger-v3/config.json`
-- `models/wd-eva02-large-tagger-v3/sw_jax_cv_config.json`
-- `models/u2net/u2net.onnx`
+```
+models/wd-eva02-large-tagger-v3/    (WD EVA02 tagger)
+models/u2net/u2net.onnx             (U2Net background removal)
+```
 
-The main app shows a top-bar indicator for both required models and optional prep models. You can also select model files from anywhere with the Browse buttons.
-
-Manual optional prep model commands:
+Or install manually:
 
 ```bash
 git clone https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3 models/wd-eva02-large-tagger-v3
 curl -L -o models/u2net/u2net.onnx https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx
 ```
 
-## Dependencies
+</details>
 
-For normal use, run `TrainFlow_Runtime_Tool` and let it create or repair the local runtime. The tool installs:
+<details>
+<summary><strong>System Requirements</strong> — GPU, Python, host dependencies</summary>
 
-- PyTorch, TorchVision, and TorchAudio CUDA 13.0 wheels from `https://download.pytorch.org/whl/cu130`
-- the bundled `training/sd-scripts/requirements.txt`
-- the bundled `sd-scripts` package in editable mode
-- TrainFlow helper packages: `gradio`, `psutil`, `toml`, `pillow`, `onnx`, `onnxruntime-gpu`, `pandas`, and `opencv-python`
-- `uv` for faster installs, with `python -m pip` as a fallback
-- optional `flash-attn` support when explicitly selected and a compatible prebuilt wheel is available
+| Requirement | Notes |
+|-------------|-------|
+| **NVIDIA GPU** | Recommended for training |
+| **Python 3.12** | Recommended on Linux for the embedded runtime |
+| **nvidia-smi** | Needed for GPU monitoring overlay |
+| **Go 1.22+** | Only when building from source |
 
-Host requirements:
+</details>
 
-- Git for clone-based installs
-- Python 3.12 recommended on Linux so the runtime tool can create `python_embeded/linux`
-- NVIDIA GPU recommended for training
-- `nvidia-smi` for GPU overlay stats
-- Go 1.22+ only when building the Go binaries from source
+---
+
+## Development
+
+<details>
+<summary><strong>Build From Source</strong> — compile Go binaries, cross-compile</summary>
+
+Only needed when modifying Go code or rebuilding release artifacts.
+
+**Linux:**
+```bash
+go build -trimpath -ldflags="-s -w" -o TrainFlow ./cmd/trainflow
+go build -trimpath -ldflags="-s -w" -o TrainFlow_Runtime_Tool ./cmd/runtime-tool
+```
+
+**Cross-compile (Windows PowerShell):**
+```powershell
+.\build.ps1
+```
+
+Outputs:
+```
+TrainFlow                              # Linux binary
+TrainFlow.exe                          # Windows binary
+TrainFlow_Runtime_Tool                 # Linux runtime tool
+TrainFlow_Runtime_Tool.exe             # Windows runtime tool
+dist/trainflow-linux-amd64             # Linux release
+dist/trainflow-windows-amd64.exe       # Windows release
+dist/trainflow-runtime-tool-linux-amd64
+dist/trainflow-runtime-tool-windows-amd64.exe
+```
+
+</details>
+
+<details>
+<summary><strong>Shipping & Distribution</strong> — release packaging, python_embeded</summary>
+
+Do not commit `python_embeded/` to Git — the runtime contains thousands of files plus large ML wheels.
+
+**For normal installs**, ship only the root binaries and let the runtime tool create the platform runtime on the user's machine:
+- Windows: `TrainFlow.exe` + `TrainFlow_Runtime_Tool.exe`
+- Linux: `TrainFlow` + `TrainFlow_Runtime_Tool`
+
+**For fully offline packages**, create a release ZIP/7z outside Git containing the binaries plus `python_embeded/<platform>`, and upload as a GitHub Release asset.
+
+</details>
+
+---
 
 ## Credits
 
-DaSiWa TrainFlow is based on and credits the original [Anima TrainFlow](https://github.com/ThetaCursed/Anima-TrainFlow) project by ThetaCursed, plus the modified `sd-scripts` training stack used by that project. This fork/rewrite adds the Go portable shell, runtime updater, path picker, hardware overlay, and resume workflow around that foundation.
+Based on the original [Anima TrainFlow](https://github.com/ThetaCursed/Anima-TrainFlow) by ThetaCursed and its modified `sd-scripts` training stack. This fork adds the Go portable shell, runtime updater, path picker, hardware overlay, resume workflow, and Musubi video training integration.
