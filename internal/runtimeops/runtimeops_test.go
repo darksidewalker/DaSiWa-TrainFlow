@@ -49,6 +49,16 @@ func TestTorchCUDAArchListSupportsThreeDigitArchitectures(t *testing.T) {
 	}
 }
 
+func TestTorchCompileTritonPackage(t *testing.T) {
+	pkg := torchCompileTritonPackage()
+	if pkg == "" {
+		t.Fatal("torch compile Triton package should not be empty")
+	}
+	if strings.Contains(pkg, "flash") {
+		t.Fatalf("torch compile Triton package must be separate from Flash Attention, got %q", pkg)
+	}
+}
+
 func TestUnifiedRuntimeMusubiPaths(t *testing.T) {
 	root := t.TempDir()
 

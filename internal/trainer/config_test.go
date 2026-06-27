@@ -72,11 +72,11 @@ func TestDefaultSettings_resumePath_empty(t *testing.T) {
 
 func TestBestDivisorInRange(t *testing.T) {
 	tests := []struct {
-		steps    int
-		lo       int
-		hi       int
-		ideal    int
-		want     int
+		steps int
+		lo    int
+		hi    int
+		ideal int
+		want  int
 	}{
 		{1100, 100, 300, 150, 110}, // divisors of 1100 in [100,300]: 100,110,220,275; closest to 150 is 110
 		{1000, 100, 300, 100, 100}, // already divides
@@ -142,9 +142,9 @@ func TestApplyStableDefaults_112images(t *testing.T) {
 
 func TestProfileDefaults_rankAlpha(t *testing.T) {
 	tests := []struct {
-		arch       string
-		wantRank   int
-		wantAlpha  int
+		arch      string
+		wantRank  int
+		wantAlpha int
 	}{
 		{ArchitectureAnima, 48, 32},
 		{ArchitectureSDXL, 64, 32},
@@ -166,9 +166,9 @@ func TestProfileDefaults_rankAlpha(t *testing.T) {
 func TestApplyStableDefaults_rankAlpha_preserved(t *testing.T) {
 	// Auto calc should apply profile-aware rank/alpha defaults
 	tests := []struct {
-		arch       string
-		wantRank   int
-		wantAlpha  int
+		arch      string
+		wantRank  int
+		wantAlpha int
 	}{
 		{ArchitectureAnima, 48, 32},
 		{ArchitectureSDXL, 64, 32},
@@ -289,5 +289,131 @@ func TestNormalizeSettings_image_from_video(t *testing.T) {
 	}
 	if sZero.NetworkAlpha != 32 {
 		t.Errorf("Anima zero alpha: got %d, want 32", sZero.NetworkAlpha)
+	}
+}
+
+func TestDefaultSettings_torchCompileDefaults(t *testing.T) {
+	s := DefaultSettings("/some/root")
+	if s.TorchCompile {
+		t.Error("torch.compile should default to disabled")
+	}
+	if s.TorchCompileMode != "default" {
+		t.Errorf("TorchCompileMode = %q, want default", s.TorchCompileMode)
+	}
+	if s.TorchCompileBackend != "inductor" {
+		t.Errorf("TorchCompileBackend = %q, want inductor", s.TorchCompileBackend)
+	}
+	if s.TorchCompileDynamic != "auto" {
+		t.Errorf("TorchCompileDynamic = %q, want auto", s.TorchCompileDynamic)
+	}
+	if s.TorchCompileCacheSizeLimit != 32 {
+		t.Errorf("TorchCompileCacheSizeLimit = %d, want 32", s.TorchCompileCacheSizeLimit)
+	}
+}
+
+func TestCreateTrainingTOML_animaTorchCompile(t *testing.T) {
+	tmp := t.TempDir()
+	s := normalizeSettings(Settings{
+		Architecture:               ArchitectureAnima,
+		ProjectName:                "compile-test",
+		OutputPath:                 tmp,
+		DatasetPath:                tmp,
+		NetworkRank:                48,
+		NetworkAlpha:               32,
+		LearningRate:               "1e-4",
+		TrainingSteps:              1000,
+		SaveSteps:                  100,
+		SampleSteps:                100,
+		TorchCompile:               true,
+		TorchCompileMode:           "default",
+		TorchCompileBackend:        "inductor",
+		TorchCompileDynamic:        "false",
+		TorchCompileCacheSizeLimit: 32,
+		CudaAllowTF32:              true,
+		CudaCudnnBenchmark:         true,
+	})
+	path, err := createTrainingTOML(s.ProjectName, s, profileFor(s), s.OutputPath, "", tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toml := string(data)
+	for _, want := range []string{
+		"compile = true",
+		"compile_backend = \"inductor\"",
+		"compile_mode = \"default\"",
+		"compile_dynamic = false",
+		"compile_cache_size_limit = 32",
+		"cuda_allow_tf32 = true",
+		"cuda_cudnn_benchmark = true",
+	} {
+		if !strings.Contains(toml, want) {
+			t.Errorf("Anima compile TOML missing %q:\n%s", want, toml)
+		}
+	}
+	if strings.Contains(toml, "torch_compile") {
+		t.Errorf("Anima compile TOML must use upstream --compile keys, not torch_compile:\n%s", toml)
+	}
+}
+
+func TestCreateTrainingTOML_sdxlIgnoresTorchCompile(t *testing.T) {
+	tmp := t.TempDir()
+	s := normalizeSettings(Settings{
+		Architecture:               ArchitectureSDXL,
+		ProjectName:                "sdxl-compile-test",
+		OutputPath:                 tmp,
+		DatasetPath:                tmp,
+		CheckpointPath:             filepath.Join(tmp, "model.safetensors"),
+		NetworkRank:                64,
+		NetworkAlpha:               32,
+		LearningRate:               "1e-4",
+		TrainingSteps:              1000,
+		SaveSteps:                  100,
+		SampleSteps:                100,
+		TorchCompile:               true,
+		TorchCompileMode:           "default",
+		TorchCompileBackend:        "inductor",
+		TorchCompileCacheSizeLimit: 32,
+		CudaAllowTF32:              true,
+		CudaCudnnBenchmark:         true,
+	})
+	if err := os.WriteFile(s.CheckpointPath, []byte("stub"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	path, err := createTrainingTOML(s.ProjectName, s, profileFor(s), s.OutputPath, "", tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toml := string(data)
+	if strings.Contains(toml, "compile = true") || strings.Contains(toml, "compile_backend") || strings.Contains(toml, "cuda_allow_tf32") {
+		t.Errorf("SDXL TOML must not include Anima torch.compile keys:\n%s", toml)
+	}
+	if !strings.Contains(toml, "sdpa = true") {
+		t.Errorf("SDXL TOML should keep SDPA enabled by default:\n%s", toml)
+	}
+}
+
+func TestValidateTorchCompileRuntime_reportsMissingTriton(t *testing.T) {
+	tmp := t.TempDir()
+	python := filepath.Join(tmp, "python")
+	script := "#!/bin/sh\n" +
+		"echo 'ModuleNotFoundError: No module named triton' >&2\n" +
+		"exit 1\n"
+	if err := os.WriteFile(python, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	err := validateTorchCompileRuntime(python, Settings{TorchCompile: true})
+	if err == nil {
+		t.Fatal("expected missing Triton error")
+	}
+	if !strings.Contains(err.Error(), "torch.compile is enabled") || !strings.Contains(err.Error(), "Triton") {
+		t.Fatalf("expected actionable Triton error, got %v", err)
 	}
 }

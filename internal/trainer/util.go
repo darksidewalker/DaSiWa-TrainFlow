@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -282,6 +283,29 @@ func validateFlashAttentionRuntime(python string) error {
 			return fmt.Errorf("Flash Attention is enabled but flash-attn is not available: %s", msg)
 		}
 		return fmt.Errorf("Flash Attention is enabled but flash-attn is not available: %w", err)
+	}
+	return nil
+}
+
+func validateTorchCompileRuntime(python string, s Settings) error {
+	check := strings.Join([]string{
+		"import torch",
+		"assert hasattr(torch, 'compile'), 'torch.compile is not available in this PyTorch build'",
+		"import triton",
+	}, "; ")
+	cmd := exec.Command(python, "-c", check)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg != "" {
+			return fmt.Errorf("torch.compile is enabled but Triton/PyTorch compile dependencies are not available: %s. Run Update Runtime/install torch.compile dependencies or disable torch.compile", msg)
+		}
+		return fmt.Errorf("torch.compile is enabled but Triton/PyTorch compile dependencies are not available: %w. Run Update Runtime/install torch.compile dependencies or disable torch.compile", err)
+	}
+	if strings.EqualFold(strings.TrimSpace(s.TorchCompileDynamic), "true") && runtime.GOOS == "windows" {
+		if _, err := exec.LookPath("cl.exe"); err != nil {
+			return fmt.Errorf("torch.compile dynamic mode on Windows requires the MSVC compiler environment (Visual Studio 2022 C++ Build Tools / x64 Native Tools Command Prompt); disable compile_dynamic or launch TrainFlow from that environment")
+		}
 	}
 	return nil
 }

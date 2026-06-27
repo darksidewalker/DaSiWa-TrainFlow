@@ -4,6 +4,7 @@ const modelStatus = document.getElementById("modelStatus");
 const osBadge = document.getElementById("osBadge");
 const keepBackup = document.getElementById("keepBackup");
 const installFlashAttention = document.getElementById("installFlashAttention");
+const installTorchCompile = document.getElementById("installTorchCompile");
 const buttons = {
   install: document.getElementById("installButton"),
   update: document.getElementById("updateButton"),
@@ -28,7 +29,8 @@ async function run(action) {
     body: JSON.stringify({
       action,
       keepBackup: keepBackup.checked,
-      installFlashAttention: installFlashAttention.checked
+      installFlashAttention: installFlashAttention.checked,
+      installTorchCompile: installTorchCompile.checked
     })
   });
   statusText.textContent = resp.message;
@@ -42,6 +44,7 @@ async function quitApp() {
   }
   keepBackup.disabled = true;
   installFlashAttention.disabled = true;
+  installTorchCompile.disabled = true;
 }
 
 function renderStatus(data) {
@@ -55,6 +58,7 @@ function renderStatus(data) {
   buttons.quit.disabled = false;
   keepBackup.disabled = Boolean(data.running);
   installFlashAttention.disabled = Boolean(data.running);
+  installTorchCompile.disabled = Boolean(data.running);
   statusText.textContent = data.running ? "Running" : "Ready";
   renderModelStatus(data.models);
 }

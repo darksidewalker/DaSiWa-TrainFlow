@@ -170,6 +170,11 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 			return StartResponse{OK: false, Message: err.Error()}, err
 		}
 	}
+	if profile.Architecture == ArchitectureAnima && s.TorchCompile {
+		if err := validateTorchCompileRuntime(python, s); err != nil {
+			return StartResponse{OK: false, Message: err.Error()}, err
+		}
+	}
 	trainDir := filepath.Join(m.root, "training", "sd-scripts")
 	trainScript := profile.trainingScript(m.root)
 	bootstrapScript, err := createTrainingBootstrap(trainDir, trainScript, configDir)

@@ -176,6 +176,7 @@ func writeAnimaTrainingTOML(content *strings.Builder, projectName string, s Sett
 		attnMode = "flash"
 	}
 	content.WriteString(fmt.Sprintf("attn_mode = %s\n", tomlString(attnMode)))
+	writeAnimaCompileTOML(content, s)
 	content.WriteString("save_model_as = \"safetensors\"\n")
 	content.WriteString("save_precision = \"bf16\"\n")
 	content.WriteString("max_data_loader_n_workers = 4\n")
@@ -183,6 +184,34 @@ func writeAnimaTrainingTOML(content *strings.Builder, projectName string, s Sett
 	content.WriteString("vae_disable_cache = true\n")
 	content.WriteString(fmt.Sprintf("seed = %d\n", s.TrainSeed))
 	writeMetadataTOML(content, projectName, s)
+}
+
+func writeAnimaCompileTOML(content *strings.Builder, s Settings) {
+	if s.CudaAllowTF32 {
+		content.WriteString("cuda_allow_tf32 = true\n")
+	}
+	if s.CudaCudnnBenchmark {
+		content.WriteString("cuda_cudnn_benchmark = true\n")
+	}
+	if !s.TorchCompile {
+		return
+	}
+	content.WriteString("compile = true\n")
+	if strings.TrimSpace(s.TorchCompileBackend) != "" {
+		content.WriteString(fmt.Sprintf("compile_backend = %s\n", tomlString(strings.TrimSpace(s.TorchCompileBackend))))
+	}
+	if strings.TrimSpace(s.TorchCompileMode) != "" {
+		content.WriteString(fmt.Sprintf("compile_mode = %s\n", tomlString(strings.TrimSpace(s.TorchCompileMode))))
+	}
+	if dynamic := strings.ToLower(strings.TrimSpace(s.TorchCompileDynamic)); dynamic == "true" || dynamic == "false" {
+		content.WriteString(fmt.Sprintf("compile_dynamic = %s\n", dynamic))
+	}
+	if s.TorchCompileFullgraph {
+		content.WriteString("compile_fullgraph = true\n")
+	}
+	if s.TorchCompileCacheSizeLimit > 0 {
+		content.WriteString(fmt.Sprintf("compile_cache_size_limit = %d\n", s.TorchCompileCacheSizeLimit))
+	}
 }
 
 func writeMetadataTOML(content *strings.Builder, projectName string, s Settings) {

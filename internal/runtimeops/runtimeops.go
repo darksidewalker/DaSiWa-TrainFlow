@@ -38,7 +38,7 @@ const (
 	uvInstallURL = "https://github.com/astral-sh/uv/releases/latest/download/uv"
 )
 
-func InstallRequirements(root string, installFlashAttention bool, log Logger) error {
+func InstallRequirements(root string, installFlashAttention bool, installTorchCompileDeps bool, log Logger) error {
 	python, err := ensurePython(root, log)
 	if err != nil {
 		return err
@@ -48,10 +48,10 @@ func InstallRequirements(root string, installFlashAttention bool, log Logger) er
 	if err := installer.install("--upgrade", "torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cu130"); err != nil {
 		return err
 	}
-	return installTrainerDeps(root, installer, installFlashAttention, log)
+	return installTrainerDeps(root, installer, installFlashAttention, installTorchCompileDeps, log)
 }
 
-func UpdateRuntime(root string, keepBackup bool, installFlashAttention bool, log Logger) error {
+func UpdateRuntime(root string, keepBackup bool, installFlashAttention bool, installTorchCompileDeps bool, log Logger) error {
 	if err := UpdateAppBinaries(root, log); err != nil {
 		return err
 	}
@@ -64,7 +64,7 @@ func UpdateRuntime(root string, keepBackup bool, installFlashAttention bool, log
 			return err
 		}
 	}
-	return InstallRequirements(root, installFlashAttention, log)
+	return InstallRequirements(root, installFlashAttention, installTorchCompileDeps, log)
 }
 
 func UpdateAppBinaries(root string, log Logger) error {
@@ -238,7 +238,7 @@ func ensurePython(root string, log Logger) (string, error) {
 	return python, nil
 }
 
-func installTrainerDeps(root string, installer dependencyInstaller, installFlashAttention bool, log Logger) error {
+func installTrainerDeps(root string, installer dependencyInstaller, installFlashAttention bool, installTorchCompileDeps bool, log Logger) error {
 	sdScriptsDir := filepath.Join(root, "training", "sd-scripts")
 	log("Upgrading pip, setuptools, and wheel...")
 	if err := installer.install("--upgrade", "pip", "setuptools<82", "wheel"); err != nil {
@@ -267,8 +267,13 @@ func installTrainerDeps(root string, installer dependencyInstaller, installFlash
 		log("Skipping musubi-tuner dependency install; training/musubi-tuner source was not found.")
 	}
 	log("Installing TrainFlow UI/prep dependencies...")
-	if err := installer.install("gradio", "psutil", "toml", "pillow", "onnx", "onnxruntime-gpu", "pandas", "opencv-python"); err != nil {
+	if err := installer.install("psutil", "toml", "pillow", "onnx", "onnxruntime-gpu", "pandas", "opencv-python"); err != nil {
 		return err
+	}
+	if installTorchCompileDeps {
+		installOptionalTorchCompileDeps(installer, log)
+	} else {
+		log("Skipping optional torch.compile/Triton dependency install.")
 	}
 	if !installFlashAttention {
 		log("Skipping optional Flash Attention install.")
@@ -276,6 +281,31 @@ func installTrainerDeps(root string, installer dependencyInstaller, installFlash
 	}
 	installOptionalFlashAttention(installer, log)
 	return nil
+}
+
+func installOptionalTorchCompileDeps(installer dependencyInstaller, log Logger) {
+	pkg := torchCompileTritonPackage()
+	if runtime.GOOS == "windows" {
+		log("Installing optional torch.compile dependency " + pkg + " for Windows. compile_dynamic=true also requires Visual Studio 2022 C++ Build Tools / x64 Native Tools.")
+	} else {
+		log("Installing optional torch.compile dependency " + pkg + "...")
+	}
+	if err := installer.install(pkg); err != nil {
+		log("Optional torch.compile/Triton dependency install failed; leave the Anima torch.compile checkbox off or install Triton manually: " + err.Error())
+		return
+	}
+	if err := run(log, installer.root, installer.python, "-c", "import torch, triton; print('torch', torch.__version__, 'triton', triton.__version__)"); err != nil {
+		log("Optional torch.compile/Triton verification failed; leave the Anima torch.compile checkbox off until fixed: " + err.Error())
+		return
+	}
+	log("torch.compile/Triton dependencies verified.")
+}
+
+func torchCompileTritonPackage() string {
+	if runtime.GOOS == "windows" {
+		return "triton-windows"
+	}
+	return "triton"
 }
 
 func musubiSourceDir(root string) string {

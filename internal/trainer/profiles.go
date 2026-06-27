@@ -155,6 +155,18 @@ func normalizeSettings(s Settings) Settings {
 	if strings.TrimSpace(s.Optimizer) == "" {
 		s.Optimizer = "Prodigy"
 	}
+	if strings.TrimSpace(s.TorchCompileMode) == "" {
+		s.TorchCompileMode = "default"
+	}
+	if strings.TrimSpace(s.TorchCompileBackend) == "" {
+		s.TorchCompileBackend = "inductor"
+	}
+	if strings.TrimSpace(s.TorchCompileDynamic) == "" {
+		s.TorchCompileDynamic = "auto"
+	}
+	if s.TorchCompileCacheSizeLimit <= 0 {
+		s.TorchCompileCacheSizeLimit = 32
+	}
 	if s.Architecture == ArchitectureLTX23 || s.Architecture == ArchitectureWAN22 {
 		// Video models need higher rank/alpha than image models.
 		// Override when the value matches a known image-model default (32 or 48).
