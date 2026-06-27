@@ -3,7 +3,9 @@ package trainer
 import (
 	"fmt"
 	"math"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -300,15 +302,73 @@ func vramEstimate(profile trainingProfile, rank int) (baseMB, perBatchMB, maxBat
 }
 
 func detectLargestGPUMemoryMB() int {
-	out, err := exec.Command("nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits").Output()
+	maxMemory := 0
+
+	// Try NVIDIA via nvidia-smi
+	if out, err := exec.Command("nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits").Output(); err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			value, err := strconv.Atoi(strings.TrimSpace(line))
+			if err == nil && value > maxMemory {
+				maxMemory = value
+			}
+		}
+	}
+
+	// Try AMD via amdgpu sysfs
+	if v := detectAMDGPUMemoryMB(); v > maxMemory {
+		maxMemory = v
+	}
+
+	return maxMemory
+}
+
+// detectAMDGPUMemoryMB reads VRAM from amdgpu sysfs.
+func detectAMDGPUMemoryMB() int {
+	maxMemory := 0
+	entries, err := os.ReadDir("/sys/class/drm")
 	if err != nil {
 		return 0
 	}
-	maxMemory := 0
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		value, err := strconv.Atoi(strings.TrimSpace(line))
-		if err == nil && value > maxMemory {
-			maxMemory = value
+	seenPCI := make(map[string]bool)
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), "card") {
+			continue
+		}
+		if strings.Count(entry.Name(), "-") > 0 {
+			continue
+		}
+		cardDir := filepath.Join("/sys/class/drm", entry.Name(), "device")
+
+		vendorData, err := os.ReadFile(filepath.Join(cardDir, "vendor"))
+		if err != nil || strings.TrimSpace(string(vendorData)) != "0x1002" {
+			continue
+		}
+
+		// Deduplicate
+		ueventData, _ := os.ReadFile(filepath.Join(cardDir, "uevent"))
+		var pciSlot string
+		for _, line := range strings.Split(string(ueventData), "\n") {
+			if strings.HasPrefix(line, "PCI_SLOT_NAME=") {
+				pciSlot = strings.TrimPrefix(line, "PCI_SLOT_NAME=")
+				break
+			}
+		}
+		if pciSlot == "" || seenPCI[pciSlot] {
+			continue
+		}
+		seenPCI[pciSlot] = true
+
+		data, err := os.ReadFile(filepath.Join(cardDir, "mem_info_vram_total"))
+		if err != nil {
+			continue
+		}
+		val, err := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
+		if err != nil {
+			continue
+		}
+		mb := int(val / (1024 * 1024))
+		if mb > maxMemory {
+			maxMemory = mb
 		}
 	}
 	return maxMemory

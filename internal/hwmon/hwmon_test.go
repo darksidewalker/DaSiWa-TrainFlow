@@ -67,3 +67,25 @@ func TestSnapshot(t *testing.T) {
 		t.Errorf("CPU usage out of range: %d", s.CPU)
 	}
 }
+
+func TestFindAmdHwmon(t *testing.T) {
+	// On a system without amdgpu, should return empty string without panic
+	result := findAMDHwmon("/sys/class/drm/card0/device")
+	// Just verify it doesn't crash; result depends on hardware
+	_ = result
+}
+
+func TestAmdGpuSysfsStats(t *testing.T) {
+	// On a system without AMD GPUs, should return nil without panic
+	stats := amdGPUSysfsStats()
+	// Just verify it doesn't crash; result depends on hardware
+	_ = stats
+}
+
+func TestAmdGpuName(t *testing.T) {
+	// Should return a non-empty string even with no lspci or uevent
+	name := amdGPUName("/nonexistent/path")
+	if name == "" {
+		t.Error("amdGPUName returned empty string")
+	}
+}
