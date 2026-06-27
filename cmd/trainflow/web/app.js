@@ -31,6 +31,14 @@ const fields = [
   "target_vram_percent",
   "train_unet_only",
   "flash_attention",
+  "torch_compile",
+  "torch_compile_mode",
+  "torch_compile_backend",
+  "torch_compile_dynamic",
+  "torch_compile_fullgraph",
+  "torch_compile_cache_size_limit",
+  "cuda_allow_tf32",
+  "cuda_cudnn_benchmark",
   "resume_enabled",
   "auto_resume",
   "resume_path",
@@ -94,6 +102,7 @@ const numericFields = new Set([
   "train_batch_size",
   "gradient_accumulation_steps",
   "target_vram_percent",
+  "torch_compile_cache_size_limit",
   "side_min",
   "side_max",
   "tagger_gen_thresh",
@@ -1111,6 +1120,48 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     showOverlayIndex(1);
   }
+});
+
+// --- Advanced options dialog ---
+const advancedDialog = document.getElementById("advancedDialog");
+const advancedOptionsButton = document.getElementById("advancedOptionsButton");
+const advancedClose = document.getElementById("advancedClose");
+const advancedSave = document.getElementById("advancedSave");
+
+function openAdvancedDialog() {
+  if (advancedDialog) advancedDialog.classList.remove("hidden");
+}
+
+function closeAdvancedDialog() {
+  if (advancedDialog) advancedDialog.classList.add("hidden");
+}
+
+if (advancedOptionsButton) advancedOptionsButton.addEventListener("click", openAdvancedDialog);
+if (advancedClose) advancedClose.addEventListener("click", closeAdvancedDialog);
+if (advancedSave) advancedSave.addEventListener("click", () => { queueSave(); closeAdvancedDialog(); });
+if (advancedDialog) advancedDialog.addEventListener("click", (event) => {
+  if (event.target === advancedDialog) closeAdvancedDialog();
+});
+
+// --- Musubi advanced options dialog ---
+const musubiAdvancedDialog = document.getElementById("musubiAdvancedDialog");
+const musubiAdvancedButton = document.getElementById("musubiAdvancedButton");
+const musubiAdvancedClose = document.getElementById("musubiAdvancedClose");
+const musubiAdvancedSave = document.getElementById("musubiAdvancedSave");
+
+function openMusubiAdvancedDialog() {
+  if (musubiAdvancedDialog) musubiAdvancedDialog.classList.remove("hidden");
+}
+
+function closeMusubiAdvancedDialog() {
+  if (musubiAdvancedDialog) musubiAdvancedDialog.classList.add("hidden");
+}
+
+if (musubiAdvancedButton) musubiAdvancedButton.addEventListener("click", openMusubiAdvancedDialog);
+if (musubiAdvancedClose) musubiAdvancedClose.addEventListener("click", closeMusubiAdvancedDialog);
+if (musubiAdvancedSave) musubiAdvancedSave.addEventListener("click", () => { queueSave(); closeMusubiAdvancedDialog(); });
+if (musubiAdvancedDialog) musubiAdvancedDialog.addEventListener("click", (event) => {
+  if (event.target === musubiAdvancedDialog) closeMusubiAdvancedDialog();
 });
 
 boot().catch((err) => setStatus(err.message, false));

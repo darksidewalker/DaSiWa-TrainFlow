@@ -180,6 +180,14 @@
               <span>Flash attention</span>
             </label>
           </div>
+          <div class="control-group profile-field profile-anima">
+            <div class="panel-title">Anima Acceleration</div>
+            <label class="check-row" title="Enable upstream Anima per-block torch.compile. Requires Triton; first epoch may be slower while graphs compile.">
+              <input id="torch_compile" type="checkbox">
+              <span>torch.compile</span>
+            </label>
+            <button id="advancedOptionsButton" class="mini-action" title="Open advanced acceleration options (compile mode, backend, TF32, etc.)">Advanced options</button>
+          </div>
           <div class="control-group">
             <div class="panel-title">Resume</div>
             <label class="check-row">
@@ -211,36 +219,8 @@
             <label><span>Duration</span><input id="video_duration" autocomplete="off"></label>
             <label class="span-2"><span>Target Frames</span><input id="video_target_frames" autocomplete="off" placeholder="1,65,129"></label>
             <label><span>Repeats</span><input id="video_num_repeats" type="number" min="1" step="1"></label>
-            <label><span>Blocks Swap</span><input id="blocks_to_swap" type="number" min="0" step="1"></label>
-            <label class="span-2"><span>Network Module</span><input id="network_module" autocomplete="off"></label>
           </div>
-          <details>
-            <summary>Advanced Musubi options</summary>
-            <div class="training-grid">
-              <label><span>Precision</span><input id="mixed_precision" autocomplete="off"></label>
-              <label><span>Frame Extract</span><input id="video_frame_extraction" autocomplete="off"></label>
-              <label><span>Caption Ext</span><input id="video_caption_extension" autocomplete="off"></label>
-              <label><span>LTX Version</span><input id="ltx_version" autocomplete="off"></label>
-              <label><span>LTX Mode</span><input id="ltx_mode" autocomplete="off"></label>
-              <label><span>LTX Check</span><input id="ltx_version_check_mode" autocomplete="off"></label>
-              <label><span>Wan Task</span><input id="wan_task" autocomplete="off"></label>
-              <label><span>Timestep</span><input id="timestep_sampling" autocomplete="off"></label>
-              <label><span>Flow Shift</span><input id="discrete_flow_shift" autocomplete="off"></label>
-              <label><span>Author</span><input id="metadata_author" autocomplete="off"></label>
-              <label class="span-2"><span>Tags</span><input id="metadata_tags" autocomplete="off"></label>
-              <label class="span-2"><span>Extra Train Args</span><input id="extra_train_args" autocomplete="off"></label>
-              <label class="span-2"><span>Extra Cache Text Args</span><input id="extra_cache_text_args" autocomplete="off"></label>
-              <label class="span-2"><span>Extra Cache Latents Args</span><input id="extra_cache_latents_args" autocomplete="off"></label>
-            </div>
-            <label class="check-row"><input id="video_enable_bucket" type="checkbox"><span>Video buckets</span></label>
-            <label class="check-row"><input id="fp8_base" type="checkbox"><span>FP8 base</span></label>
-            <label class="check-row"><input id="fp8_scaled" type="checkbox"><span>FP8 scaled</span></label>
-            <label class="check-row"><input id="sdpa" type="checkbox"><span>SDPA</span></label>
-            <label class="check-row"><input id="gradient_checkpointing" type="checkbox"><span>Gradient checkpointing</span></label>
-            <label class="check-row"><input id="use_pinned_memory_for_block_swap" type="checkbox"><span>Pinned block swap</span></label>
-            <label class="check-row"><input id="persistent_data_loader_workers" type="checkbox"><span>Persistent workers</span></label>
-            <label class="check-row"><input id="save_state_on_train_end" type="checkbox"><span>Save state on end</span></label>
-          </details>
+          <button id="musubiAdvancedButton" class="mini-action" title="Open advanced Musubi options (precision, network, memory, etc.)">Advanced options</button>
         </section>
       </aside>
 
@@ -422,6 +402,96 @@
       <footer>
         <button id="pathCancel" class="secondary">Cancel</button>
         <button id="pathChoose" class="primary">Choose</button>
+      </footer>
+    </section>
+  </div>
+
+  <div id="advancedDialog" class="dialog-backdrop hidden">
+    <section class="advanced-dialog">
+      <header>
+        <strong>Advanced Options</strong>
+        <button id="advancedClose" class="icon-button" title="Close">x</button>
+      </header>
+      <div class="advanced-body">
+        <div class="advanced-section">
+          <div class="panel-title">torch.compile</div>
+          <label><span>Compile Mode</span><select id="torch_compile_mode"><option value="default">default</option><option value="reduce-overhead">reduce-overhead</option><option value="max-autotune">max-autotune</option><option value="max-autotune-no-cudagraphs">max-autotune-no-cudagraphs</option></select></label>
+          <label><span>Backend</span><input id="torch_compile_backend" autocomplete="off" placeholder="inductor"></label>
+          <label><span>Dynamic</span><select id="torch_compile_dynamic"><option value="auto">auto</option><option value="false">false</option><option value="true">true</option></select></label>
+          <label><span>Cache Limit</span><input id="torch_compile_cache_size_limit" type="number" min="1" step="1"></label>
+          <label class="check-row"><input id="torch_compile_fullgraph" type="checkbox"><span>Fullgraph</span></label>
+        </div>
+        <div class="advanced-section">
+          <div class="panel-title">CUDA</div>
+          <label class="check-row"><input id="cuda_allow_tf32" type="checkbox"><span>Allow TF32</span></label>
+          <label class="check-row"><input id="cuda_cudnn_benchmark" type="checkbox"><span>cuDNN benchmark</span></label>
+        </div>
+        <div class="advanced-section">
+          <div class="panel-title">General</div>
+          <div class="muted-line">Anima only. SDXL/Pony/Illustrious use SDPA by default. Windows compile_dynamic=true requires Visual Studio 2022 C++ Build Tools / x64 Native Tools.</div>
+        </div>
+      </div>
+      <footer>
+        <button id="advancedSave" class="primary">Save</button>
+      </footer>
+    </section>
+  </div>
+
+  <div id="musubiAdvancedDialog" class="dialog-backdrop hidden">
+    <section class="advanced-dialog">
+      <header>
+        <strong>Advanced Musubi Options</strong>
+        <button id="musubiAdvancedClose" class="icon-button" title="Close">x</button>
+      </header>
+      <div class="advanced-body">
+        <div class="advanced-section">
+          <div class="panel-title">Network</div>
+          <label class="span-2"><span>Network Module</span><input id="network_module" autocomplete="off"></label>
+          <label><span>Blocks Swap</span><input id="blocks_to_swap" type="number" min="0" step="1"></label>
+        </div>
+        <div class="advanced-section">
+          <div class="panel-title">Training</div>
+          <label><span>Precision</span><input id="mixed_precision" autocomplete="off"></label>
+          <label><span>Timestep</span><input id="timestep_sampling" autocomplete="off"></label>
+          <label><span>Flow Shift</span><input id="discrete_flow_shift" autocomplete="off"></label>
+        </div>
+        <div class="advanced-section">
+          <div class="panel-title">LTX / WAN</div>
+          <label><span>LTX Version</span><input id="ltx_version" autocomplete="off"></label>
+          <label><span>LTX Mode</span><input id="ltx_mode" autocomplete="off"></label>
+          <label><span>LTX Check</span><input id="ltx_version_check_mode" autocomplete="off"></label>
+          <label><span>Wan Task</span><input id="wan_task" autocomplete="off"></label>
+        </div>
+        <div class="advanced-section">
+          <div class="panel-title">Dataset</div>
+          <label><span>Frame Extract</span><input id="video_frame_extraction" autocomplete="off"></label>
+          <label><span>Caption Ext</span><input id="video_caption_extension" autocomplete="off"></label>
+          <label><span>Author</span><input id="metadata_author" autocomplete="off"></label>
+          <label class="span-2"><span>Tags</span><input id="metadata_tags" autocomplete="off"></label>
+        </div>
+        <div class="advanced-section">
+          <div class="panel-title">Memory</div>
+          <label class="check-row"><input id="fp8_base" type="checkbox"><span>FP8 base</span></label>
+          <label class="check-row"><input id="fp8_scaled" type="checkbox"><span>FP8 scaled</span></label>
+          <label class="check-row"><input id="use_pinned_memory_for_block_swap" type="checkbox"><span>Pinned block swap</span></label>
+          <label class="check-row"><input id="persistent_data_loader_workers" type="checkbox"><span>Persistent workers</span></label>
+        </div>
+        <div class="advanced-section">
+          <div class="panel-title">Optimization</div>
+          <label class="check-row"><input id="sdpa" type="checkbox"><span>SDPA</span></label>
+          <label class="check-row"><input id="gradient_checkpointing" type="checkbox"><span>Gradient checkpointing</span></label>
+          <label class="check-row"><input id="video_enable_bucket" type="checkbox"><span>Video buckets</span></label>
+          <label class="check-row"><input id="save_state_on_train_end" type="checkbox"><span>Save state on end</span></label>
+        </div>
+        <div class="advanced-section">
+          <div class="panel-title">Extra Args</div>
+          <label class="span-2"><span>Extra Train Args</span><input id="extra_train_args" autocomplete="off"></label>
+          <label class="span-2"><span>Extra Cache Text Args</span><input id="extra_cache_text_args" autocomplete="off"></label>
+          <label class="span-2"><span>Extra Cache Latents Args</span><input id="extra_cache_latents_args" autocomplete="off"></label>
+        </div>
+      </div>
+      <footer>
+        <button id="musubiAdvancedSave" class="primary">Save</button>
       </footer>
     </section>
   </div>

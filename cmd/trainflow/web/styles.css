@@ -698,6 +698,59 @@ textarea:focus {
   border-bottom: 0;
 }
 
+.advanced-dialog {
+  width: min(520px, calc(100vw - 40px));
+  max-height: min(640px, calc(100vh - 36px));
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #15191e;
+  box-shadow: var(--shadow);
+}
+
+.advanced-dialog header,
+.advanced-dialog footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.advanced-dialog header {
+  justify-content: space-between;
+}
+
+.advanced-dialog footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+}
+
+.advanced-body {
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.advanced-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.advanced-section .panel-title {
+  margin-bottom: 4px;
+}
+
+.advanced-section .muted-line {
+  margin-top: 0;
+}
+
 .path-address {
   grid-template-columns: auto 1fr auto;
 }
