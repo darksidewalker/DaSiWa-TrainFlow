@@ -59,6 +59,62 @@ func TestTorchCompileTritonPackage(t *testing.T) {
 	}
 }
 
+func TestTorchInstallPlanDefaultsToCUDA13WithOptionalCUDAFeatures(t *testing.T) {
+	plan := torchInstallPlan(TorchInstallOptions{InstallFlashAttention: true, InstallTorchCompileDeps: true})
+
+	if plan.SkipTorchInstall {
+		t.Fatal("default install must install the managed CUDA torch wheels")
+	}
+	if !plan.AllowCUDAFeatures {
+		t.Fatal("default CUDA torch install should allow optional CUDA features")
+	}
+	joined := strings.Join(plan.Args, " ")
+	if !strings.Contains(joined, "--upgrade torch torchvision torchaudio") {
+		t.Fatalf("default torch args should upgrade torch packages, got %q", joined)
+	}
+	if !strings.Contains(joined, "https://download.pytorch.org/whl/cu130") {
+		t.Fatalf("default torch args should use CUDA 13.0 index, got %q", joined)
+	}
+}
+
+func TestTorchInstallPlanROCmUsesROCmIndexAndDisablesCUDAOnlyFeatures(t *testing.T) {
+	plan := torchInstallPlan(TorchInstallOptions{Backend: TorchBackendROCm, InstallFlashAttention: true, InstallTorchCompileDeps: true})
+
+	if plan.SkipTorchInstall {
+		t.Fatal("ROCm backend should install ROCm torch wheels")
+	}
+	if plan.AllowCUDAFeatures {
+		t.Fatal("ROCm backend must disable optional CUDA-only feature installs")
+	}
+	joined := strings.Join(plan.Args, " ")
+	if !strings.Contains(joined, "--upgrade torch torchvision torchaudio") {
+		t.Fatalf("ROCm torch args should upgrade torch packages, got %q", joined)
+	}
+	if !strings.Contains(joined, "https://download.pytorch.org/whl/rocm") {
+		t.Fatalf("ROCm torch args should use a ROCm wheel index, got %q", joined)
+	}
+	if !strings.Contains(plan.Warning, "ROCm") || !strings.Contains(plan.Warning, "Flash Attention") {
+		t.Fatalf("ROCm warning should be prominent about unsupported CUDA-only features, got %q", plan.Warning)
+	}
+}
+
+func TestTorchInstallPlanSkipExistingDoesNotUpgradeTorchOrCUDAFeatures(t *testing.T) {
+	plan := torchInstallPlan(TorchInstallOptions{Backend: TorchBackendSkip, InstallFlashAttention: true, InstallTorchCompileDeps: true})
+
+	if !plan.SkipTorchInstall {
+		t.Fatal("skip backend should not install or upgrade torch")
+	}
+	if len(plan.Args) != 0 {
+		t.Fatalf("skip backend should not produce torch install args, got %#v", plan.Args)
+	}
+	if plan.AllowCUDAFeatures {
+		t.Fatal("skip/custom existing torch backend must disable CUDA-only optional installs")
+	}
+	if !strings.Contains(plan.Warning, "existing PyTorch") {
+		t.Fatalf("skip warning should mention existing PyTorch, got %q", plan.Warning)
+	}
+}
+
 func TestUnifiedRuntimeMusubiPaths(t *testing.T) {
 	root := t.TempDir()
 

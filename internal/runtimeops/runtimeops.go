@@ -27,6 +27,10 @@ const (
 	pythonVersion = "3.12.10"
 	pythonTag     = "312"
 
+	TorchBackendCUDA13 = "cuda13"
+	TorchBackendROCm   = "rocm"
+	TorchBackendSkip   = "skip"
+
 	flashAttentionPackage               = "flash_attn"
 	flashAttentionPyPIName              = "flash-attn"
 	flashAttentionMinBuildMemoryBytes   = uint64(96 * 1024 * 1024 * 1024)
@@ -38,20 +42,61 @@ const (
 	uvInstallURL = "https://github.com/astral-sh/uv/releases/latest/download/uv"
 )
 
+type TorchInstallOptions struct {
+	Backend                 string
+	InstallFlashAttention   bool
+	InstallTorchCompileDeps bool
+}
+
+type torchInstallPlanResult struct {
+	Args              []string
+	Warning           string
+	SkipTorchInstall  bool
+	AllowCUDAFeatures bool
+	Description       string
+}
+
 func InstallRequirements(root string, installFlashAttention bool, installTorchCompileDeps bool, log Logger) error {
+	return InstallRequirementsWithOptions(root, TorchInstallOptions{
+		Backend:                 TorchBackendCUDA13,
+		InstallFlashAttention:   installFlashAttention,
+		InstallTorchCompileDeps: installTorchCompileDeps,
+	}, log)
+}
+
+func InstallRequirementsWithOptions(root string, opts TorchInstallOptions, log Logger) error {
 	python, err := ensurePython(root, log)
 	if err != nil {
 		return err
 	}
 	installer := prepareInstaller(root, python, log)
-	log("Installing PyTorch CUDA 13.0 wheels...")
-	if err := installer.install("--upgrade", "torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cu130"); err != nil {
-		return err
+	plan := torchInstallPlan(opts)
+	if plan.Warning != "" {
+		log(plan.Warning)
 	}
-	return installTrainerDeps(root, installer, installFlashAttention, installTorchCompileDeps, log)
+	if plan.SkipTorchInstall {
+		log("Skipping managed PyTorch install; verifying existing torch package...")
+		if err := verifyExistingTorch(installer.python, log); err != nil {
+			return err
+		}
+	} else {
+		log("Installing " + plan.Description + "...")
+		if err := installer.install(plan.Args...); err != nil {
+			return err
+		}
+	}
+	return installTrainerDeps(root, installer, opts.InstallFlashAttention && plan.AllowCUDAFeatures, opts.InstallTorchCompileDeps && plan.AllowCUDAFeatures, log)
 }
 
 func UpdateRuntime(root string, keepBackup bool, installFlashAttention bool, installTorchCompileDeps bool, log Logger) error {
+	return UpdateRuntimeWithOptions(root, keepBackup, TorchInstallOptions{
+		Backend:                 TorchBackendCUDA13,
+		InstallFlashAttention:   installFlashAttention,
+		InstallTorchCompileDeps: installTorchCompileDeps,
+	}, log)
+}
+
+func UpdateRuntimeWithOptions(root string, keepBackup bool, opts TorchInstallOptions, log Logger) error {
 	if err := UpdateAppBinaries(root, log); err != nil {
 		return err
 	}
@@ -64,7 +109,38 @@ func UpdateRuntime(root string, keepBackup bool, installFlashAttention bool, ins
 			return err
 		}
 	}
-	return InstallRequirements(root, installFlashAttention, installTorchCompileDeps, log)
+	return InstallRequirementsWithOptions(root, opts, log)
+}
+
+func torchInstallPlan(opts TorchInstallOptions) torchInstallPlanResult {
+	switch strings.TrimSpace(strings.ToLower(opts.Backend)) {
+	case "", TorchBackendCUDA13:
+		return torchInstallPlanResult{
+			Args:              []string{"--upgrade", "torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cu130"},
+			AllowCUDAFeatures: true,
+			Description:       "PyTorch CUDA 13.0 wheels",
+		}
+	case TorchBackendROCm:
+		return torchInstallPlanResult{
+			Args:              []string{"--upgrade", "torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/rocm6.4"},
+			AllowCUDAFeatures: false,
+			Description:       "PyTorch ROCm wheels",
+			Warning:           "WARNING: ROCm runtime install is experimental. TrainFlow will install ROCm PyTorch and will NOT install CUDA-only optional features such as Flash Attention or torch.compile/Triton deps. NVIDIA GPU monitoring via nvidia-smi is also unavailable on ROCm. Core sd-scripts training may work if your ROCm stack and GPU are supported by PyTorch.",
+		}
+	case TorchBackendSkip:
+		return torchInstallPlanResult{
+			SkipTorchInstall:  true,
+			AllowCUDAFeatures: false,
+			Description:       "existing PyTorch install",
+			Warning:           "WARNING: Using existing PyTorch runtime. TrainFlow will not install or upgrade torch/torchvision/torchaudio and will NOT install CUDA-only optional features such as Flash Attention or torch.compile/Triton deps automatically.",
+		}
+	default:
+		return torchInstallPlan(TorchInstallOptions{Backend: TorchBackendCUDA13})
+	}
+}
+
+func verifyExistingTorch(python string, log Logger) error {
+	return run(log, filepath.Dir(python), python, "-c", "import torch; print('torch', torch.__version__, 'cuda', torch.version.cuda, 'hip', getattr(torch.version, 'hip', None), 'cuda_available', torch.cuda.is_available())")
 }
 
 func UpdateAppBinaries(root string, log Logger) error {
@@ -182,7 +258,7 @@ func Verify(root string, log Logger) error {
 	verifyScript := strings.Join([]string{
 		"import sys, torch",
 		"print(sys.version)",
-		"print('torch', torch.__version__, 'cuda', torch.version.cuda, 'available', torch.cuda.is_available())",
+		"print('torch', torch.__version__, 'cuda', torch.version.cuda, 'hip', getattr(torch.version, 'hip', None), 'available', torch.cuda.is_available())",
 		"import accelerate, transformers, diffusers, av, cv2, safetensors, sentencepiece, easydict",
 		"import musubi_tuner",
 		"print('musubi_tuner import ok')",

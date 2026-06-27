@@ -38,8 +38,17 @@
       <input id="installTorchCompile" type="checkbox">
       <span>Install Anima torch.compile / Triton deps (optional)</span>
     </label>
+    <section class="torch-panel">
+      <label for="torchBackend">PyTorch runtime backend</label>
+      <select id="torchBackend">
+        <option value="cuda13">NVIDIA CUDA 13.0 (default, fully supported)</option>
+        <option value="rocm">AMD ROCm 6.4 (experimental)</option>
+        <option value="skip">Use existing PyTorch install / do not upgrade torch</option>
+      </select>
+      <p id="torchWarning" class="warning" hidden></p>
+    </section>
     <section class="note">
-      <p>Windows updates `python_embeded/windows` with the official Python 3.12 embeddable package. Linux creates `python_embeded/linux` as a local venv using `python3.12` or `python3` from PATH. The unified installer uses one TrainFlow-owned runtime for sd-scripts, vendored `training/musubi-tuner`, TrainFlow prep tools, and shared PyTorch/CUDA packages; it does not create a second Musubi venv. Dependencies install with uv first and fall back to pip if needed. Verify Runtime checks Torch/CUDA plus Musubi imports. Backups are deleted after a successful update unless the checkbox is enabled. Flash Attention is skipped unless selected, searches official and community prebuilt wheels, CUDA 13.0 uses the default torch/SDPA attention path when no compatible wheel exists, and local flash-attn source builds are guarded because they can exhaust RAM and swap. The torch.compile option installs Triton for Anima per-block compile; on Windows, compile_dynamic=true also requires Visual Studio 2022 C++ Build Tools / x64 Native Tools.</p>
+      <p>Windows updates `python_embeded/windows` with the official Python 3.12 embeddable package. Linux creates `python_embeded/linux` as a local venv using `python3.12` or `python3` from PATH. The unified installer uses one TrainFlow-owned runtime for sd-scripts, vendored `training/musubi-tuner`, TrainFlow prep tools, and shared PyTorch packages; it does not create a second Musubi venv. Dependencies install with uv first and fall back to pip if needed. The default backend installs PyTorch CUDA 13.0 wheels from PyTorch. ROCm/custom existing PyTorch modes are advanced and experimental: they skip CUDA-only optional installers, including Flash Attention and torch.compile/Triton deps, and NVIDIA-only GPU monitoring will not work. Verify Runtime checks Torch plus Musubi imports. Backups are deleted after a successful update unless the checkbox is enabled. Flash Attention is skipped unless selected, searches official and community prebuilt wheels, CUDA 13.0 uses the default torch/SDPA attention path when no compatible wheel exists, and local flash-attn source builds are guarded because they can exhaust RAM and swap. The torch.compile option installs Triton for Anima per-block compile; on Windows, compile_dynamic=true also requires Visual Studio 2022 C++ Build Tools / x64 Native Tools.</p>
     </section>
     <pre id="logs"></pre>
   </main>

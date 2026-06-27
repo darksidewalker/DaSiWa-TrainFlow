@@ -5,6 +5,8 @@ const osBadge = document.getElementById("osBadge");
 const keepBackup = document.getElementById("keepBackup");
 const installFlashAttention = document.getElementById("installFlashAttention");
 const installTorchCompile = document.getElementById("installTorchCompile");
+const torchBackend = document.getElementById("torchBackend");
+const torchWarning = document.getElementById("torchWarning");
 const buttons = {
   install: document.getElementById("installButton"),
   update: document.getElementById("updateButton"),
@@ -30,7 +32,8 @@ async function run(action) {
       action,
       keepBackup: keepBackup.checked,
       installFlashAttention: installFlashAttention.checked,
-      installTorchCompile: installTorchCompile.checked
+      installTorchCompile: installTorchCompile.checked,
+      torchBackend: torchBackend.value
     })
   });
   statusText.textContent = resp.message;
@@ -45,6 +48,28 @@ async function quitApp() {
   keepBackup.disabled = true;
   installFlashAttention.disabled = true;
   installTorchCompile.disabled = true;
+  torchBackend.disabled = true;
+}
+
+function renderTorchBackend() {
+  const backend = torchBackend.value;
+  const cudaOnlyDisabled = backend !== "cuda13";
+  if (cudaOnlyDisabled) {
+    installFlashAttention.checked = false;
+    installTorchCompile.checked = false;
+  }
+  installFlashAttention.disabled = cudaOnlyDisabled;
+  installTorchCompile.disabled = cudaOnlyDisabled;
+  if (backend === "rocm") {
+    torchWarning.hidden = false;
+    torchWarning.textContent = "WARNING: ROCm runtime install is experimental. TrainFlow will install ROCm PyTorch, but CUDA-only optional installers are disabled: Flash Attention and torch.compile/Triton deps will NOT be installed. NVIDIA GPU monitoring via nvidia-smi will not work. Use only if your AMD GPU and ROCm stack are supported by PyTorch.";
+  } else if (backend === "skip") {
+    torchWarning.hidden = false;
+    torchWarning.textContent = "WARNING: Existing PyTorch mode will not install or upgrade torch/torchvision/torchaudio. CUDA-only optional installers are disabled automatically; install any compatible acceleration packages yourself.";
+  } else {
+    torchWarning.hidden = true;
+    torchWarning.textContent = "";
+  }
 }
 
 function renderStatus(data) {
@@ -57,8 +82,12 @@ function renderStatus(data) {
   }
   buttons.quit.disabled = false;
   keepBackup.disabled = Boolean(data.running);
-  installFlashAttention.disabled = Boolean(data.running);
-  installTorchCompile.disabled = Boolean(data.running);
+  torchBackend.disabled = Boolean(data.running);
+  renderTorchBackend();
+  if (data.running) {
+    installFlashAttention.disabled = true;
+    installTorchCompile.disabled = true;
+  }
   statusText.textContent = data.running ? "Running" : "Ready";
   renderModelStatus(data.models);
 }
@@ -90,8 +119,10 @@ buttons.models.addEventListener("click", () => run("models"));
 buttons.prepModels.addEventListener("click", () => run("prep-models"));
 buttons.verify.addEventListener("click", () => run("verify"));
 buttons.quit.addEventListener("click", () => quitApp().catch((err) => (statusText.textContent = err.message)));
+torchBackend.addEventListener("change", renderTorchBackend);
 
 api("/api/status").then(renderStatus).catch((err) => {
   statusText.textContent = err.message;
 });
+renderTorchBackend();
 connectWS();

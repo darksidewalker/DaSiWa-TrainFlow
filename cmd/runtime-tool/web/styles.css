@@ -101,6 +101,41 @@ p {
   height: 18px;
 }
 
+.torch-panel {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(24, 27, 32, 0.72);
+}
+
+.torch-panel label {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.torch-panel select {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #252b33;
+  color: var(--text);
+  font: inherit;
+  padding: 0 10px;
+}
+
+.warning {
+  margin: 2px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(245, 184, 75, 0.7);
+  border-radius: 8px;
+  color: #ffd98a;
+  background: rgba(245, 184, 75, 0.12);
+  font-weight: 800;
+}
+
 button {
   min-height: 48px;
   border: 1px solid var(--line);

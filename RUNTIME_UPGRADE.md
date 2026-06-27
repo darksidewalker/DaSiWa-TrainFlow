@@ -23,7 +23,7 @@ The tool:
 - installs `uv` into the embedded runtime
 - installs Python dependencies with `uv pip install --python <embedded-python>` when available
 - falls back to `python -m pip install` if uv bootstrap or uv install fails
-- installs PyTorch/torchvision/torchaudio from `https://download.pytorch.org/whl/cu130`
+- installs PyTorch/torchvision/torchaudio from the selected backend; CUDA 13.0 from `https://download.pytorch.org/whl/cu130` is the default
 - reinstalls `training/sd-scripts` requirements and the editable sd-scripts package
 - installs Flash Attention from a prebuilt wheel only when selected, including an official upstream wheel attempt and a community prebuilt-wheel release search; CUDA 13.0 uses the default torch/SDPA attention path when no wheel exists
 - prints Python, Torch, CUDA, and CUDA availability at the end
@@ -47,6 +47,14 @@ There is no official Python "embeddable package" equivalent for Linux. The click
 Then click **Update Runtime** or **Install Requirements**.
 
 Dependency installation also uses uv first on Linux. Everything still targets the local `python_embeded/linux` interpreter, so packages are installed into the app runtime rather than your system Python.
+
+## PyTorch backend selection
+
+The runtime tool defaults to the known-good NVIDIA CUDA 13.0 PyTorch wheel set. Advanced users can choose **AMD ROCm 6.4 (experimental)** or **Use existing PyTorch install / do not upgrade torch** from the runtime tool before clicking **Install Unified Training Runtime** or **Update Runtime**.
+
+> **Important ROCm warning:** ROCm support is experimental. Selecting ROCm installs PyTorch from the ROCm wheel index and disables CUDA-only optional installers automatically. TrainFlow will not install Flash Attention wheels/source builds or Anima `torch.compile`/Triton deps in ROCm mode, even if their checkboxes were selected. NVIDIA-only hardware monitoring through `nvidia-smi` is unavailable. Core sd-scripts training may work only when your AMD GPU, ROCm driver/runtime, and the selected PyTorch ROCm wheels are compatible.
+
+> **Existing PyTorch warning:** Existing-PyTorch mode verifies that `import torch` works, but it does not install or upgrade `torch`, `torchvision`, or `torchaudio`. It also disables CUDA-only optional installers automatically. Use this when you manually installed a custom torch build into `python_embeded/linux` or `python_embeded/windows` and do not want TrainFlow to replace it.
 
 Flash Attention is optional. The runtime tool first tries the upstream release wheel name that matches the current Python, Torch, CUDA, C++ ABI, and platform, then searches `mjun0812/flash-attention-prebuild-wheels` release assets for a matching wheel, then asks pip/uv for a binary-only PyPI wheel. To force a known wheel URL, set `DASIWA_FLASH_ATTN_WHEEL_URL`. If no wheel exists, CUDA 13.0 skips local compilation and uses the default `attn_mode = "torch"` path, which relies on PyTorch SDPA. Non-CUDA-13 source builds remain opt-in with `DASIWA_FLASH_ATTN_SOURCE_BUILD=1`, run single-job, and are skipped unless available RAM plus swap is at least 96 GiB.
 

@@ -110,7 +110,9 @@ The UI opens at `http://127.0.0.1:7860` (or open it manually if your browser doe
 - Status pills in the main UI with quick-launch buttons
 - Platform-specific portable Python (`python_embeded/windows` or `python_embeded/linux`)
 - uv-first dependency installation with pip fallback
-- PyTorch CUDA 13.0 wheels from `https://download.pytorch.org/whl/cu130`
+- PyTorch backend selector: CUDA 13.0 by default, experimental ROCm 6.4, or existing user-managed PyTorch
+
+> **ROCm / custom PyTorch warning:** CUDA 13.0 remains the fully supported default. The ROCm and existing-PyTorch runtime modes are advanced/experimental and are intended for users who already know their PyTorch build works with their hardware. When ROCm or existing PyTorch is selected, TrainFlow disables CUDA-only optional installers such as Flash Attention and Anima `torch.compile`/Triton deps. NVIDIA-only GPU monitoring through `nvidia-smi` is also unavailable.
 
 ### Hardware Monitoring
 - Compact overlay inside the sampler panel

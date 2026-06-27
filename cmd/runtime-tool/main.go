@@ -62,13 +62,18 @@ func main() {
 			KeepBackup            bool   `json:"keepBackup"`
 			InstallFlashAttention bool   `json:"installFlashAttention"`
 			InstallTorchCompile   bool   `json:"installTorchCompile"`
+			TorchBackend          string `json:"torchBackend"`
 		}
 		defer r.Body.Close()
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		ok, msg := runState.start(body.Action, body.KeepBackup, body.InstallFlashAttention, body.InstallTorchCompile)
+		ok, msg := runState.start(body.Action, body.KeepBackup, runtimeops.TorchInstallOptions{
+			Backend:                 body.TorchBackend,
+			InstallFlashAttention:   body.InstallFlashAttention,
+			InstallTorchCompileDeps: body.InstallTorchCompile,
+		})
 		writeJSON(w, map[string]any{"ok": ok, "message": msg})
 	})
 	mux.HandleFunc("/api/app/quit", func(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +102,7 @@ func main() {
 	}
 }
 
-func (r *runner) start(action string, keepBackup bool, installFlashAttention bool, installTorchCompile bool) (bool, string) {
+func (r *runner) start(action string, keepBackup bool, torchOpts runtimeops.TorchInstallOptions) (bool, string) {
 	r.mu.Lock()
 	if r.running {
 		r.mu.Unlock()
@@ -117,9 +122,9 @@ func (r *runner) start(action string, keepBackup bool, installFlashAttention boo
 		var err error
 		switch action {
 		case "install":
-			err = runtimeops.InstallRequirements(r.root, installFlashAttention, installTorchCompile, r.append)
+			err = runtimeops.InstallRequirementsWithOptions(r.root, torchOpts, r.append)
 		case "update":
-			err = runtimeops.UpdateRuntime(r.root, keepBackup, installFlashAttention, installTorchCompile, r.append)
+			err = runtimeops.UpdateRuntimeWithOptions(r.root, keepBackup, torchOpts, r.append)
 		case "verify":
 			err = runtimeops.Verify(r.root, r.append)
 		case "models":
