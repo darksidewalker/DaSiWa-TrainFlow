@@ -80,6 +80,8 @@ const fields = [
   "fp8_scaled",
   "sdpa",
   "gradient_checkpointing",
+  "full_ft_train_text_encoder",
+  "full_ft_text_encoder_fallback",
   "use_pinned_memory_for_block_swap",
   "persistent_data_loader_workers",
   "save_state_on_train_end",
@@ -87,7 +89,14 @@ const fields = [
   "metadata_tags",
   "extra_train_args",
   "extra_cache_text_args",
-  "extra_cache_latents_args"
+  "extra_cache_latents_args",
+  "training_mode",
+  "ti_placeholder_token",
+  "ti_num_vectors",
+  "ti_initializer_word",
+  "ti_learning_rate",
+  "ti_per_device_batch_size",
+  "ti_random_crop"
 ];
 
 const numericFields = new Set([
@@ -116,7 +125,9 @@ const numericFields = new Set([
   "video_skip_frames",
   "video_parallel_workers",
   "blocks_to_swap",
-  "network_alpha"
+  "network_alpha",
+  "ti_num_vectors",
+  "ti_per_device_batch_size"
 ]);
 
 const els = Object.fromEntries(fields.map((id) => [id, document.getElementById(id)]));
@@ -1052,6 +1063,25 @@ for (const id of ["dit_path", "checkpoint_path", "qwen_path", "vae_path"]) {
 els.optimizer.addEventListener("change", () => {
   normalizeOptimizerLearningRate();
 });
+
+// Training mode toggle (LoRA vs Textual Inversion)
+if (els.training_mode) {
+  els.training_mode.addEventListener("change", () => {
+    const isTI = els.training_mode.value === "textual_inversion";
+    const loraFields = document.getElementById("loraFields");
+    const tiFields = document.getElementById("tiFields");
+    if (loraFields) loraFields.style.display = isTI ? "none" : "";
+    if (tiFields) tiFields.style.display = isTI ? "" : "none";
+    queueSave();
+  });
+}
+
+// TI random crop toggle (simple flag, no sub-options)
+if (els.ti_random_crop) {
+  els.ti_random_crop.addEventListener("change", () => {
+    queueSave();
+  });
+}
 
 for (const button of document.querySelectorAll(".browse-button")) {
   button.addEventListener("click", () => openPathPicker(button.dataset.target, button.dataset.mode));

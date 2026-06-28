@@ -360,3 +360,90 @@ func absPath(path string) string {
 	}
 	return abs
 }
+
+// buildTIArgs returns CLI arguments for textual inversion training.
+func buildTIArgs(s Settings, projectOut, datasetTOML, trainingTOML string) []string {
+	var args []string
+	args = append(args, "--token_string", nonEmpty(s.TIPlaceholderToken, "*test*"))
+	args = append(args, "--num_vectors_per_token", strconv.Itoa(nonZero(s.TINumVectors, 16)))
+	if strings.TrimSpace(s.TIInitializerWord) != "" {
+		args = append(args, "--init_word", s.TIInitializerWord)
+	}
+	if s.TILearningRate != "" {
+		args = append(args, "--learning_rate", s.TILearningRate)
+	}
+	if s.TIPerDeviceBatchSz > 0 {
+		args = append(args, "--train_batch_size", strconv.Itoa(s.TIPerDeviceBatchSz))
+	}
+	if s.TIRandomCrop {
+		args = append(args, "--random_crop")
+	}
+	args = append(args, "--save_model_as", "safetensors")
+	args = append(args, "--output_dir", absPath(projectOut))
+	args = append(args, "--seed", strconv.Itoa(s.TrainSeed))
+	return args
+}
+
+func nonZero(value int, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+// createTITrainingTOML generates a minimal training TOML for textual inversion.
+// TI-specific parameters (token, vectors, init_word) are passed as CLI args.
+func createTITrainingTOML(projectName string, s Settings, profile trainingProfile, outputDir, outDir string) (string, error) {
+	content := strings.Builder{}
+
+	// Model path
+	if profile.Architecture == ArchitectureSDXL {
+		content.WriteString(fmt.Sprintf("pretrained_model_name_or_path = %s\n", tomlString(filepath.ToSlash(absPath(s.CheckpointPath)))))
+		if strings.TrimSpace(s.VAEPath) != "" && process.FileExists(s.VAEPath) {
+			content.WriteString(fmt.Sprintf("vae = %s\n", tomlString(filepath.ToSlash(absPath(s.VAEPath)))))
+		}
+	} else {
+		// Anima TI — use DiT+Qwen+VAE paths
+		content.WriteString(fmt.Sprintf("pretrained_model_name_or_path = %s\n", tomlString(filepath.ToSlash(absPath(s.DiTPath)))))
+		content.WriteString(fmt.Sprintf("qwen3 = %s\n", tomlString(filepath.ToSlash(absPath(s.QwenPath)))))
+		content.WriteString(fmt.Sprintf("vae = %s\n", tomlString(filepath.ToSlash(absPath(s.VAEPath)))))
+	}
+
+	// Training params
+	content.WriteString(fmt.Sprintf("learning_rate = %s\n", nonEmpty(s.TILearningRate, "0.01")))
+	content.WriteString(fmt.Sprintf("max_train_steps = %d\n", s.TrainingSteps))
+	content.WriteString(fmt.Sprintf("train_batch_size = %d\n", nonZero(s.TIPerDeviceBatchSz, 1)))
+	content.WriteString(fmt.Sprintf("gradient_accumulation_steps = %d\n", s.GradientAccumulationSteps))
+	content.WriteString("mixed_precision = \"bf16\"\n")
+	content.WriteString(fmt.Sprintf("output_dir = %s\n", tomlString(filepath.ToSlash(absPath(outputDir)))))
+	content.WriteString(fmt.Sprintf("output_name = %s\n", tomlString(projectName)))
+	content.WriteString(fmt.Sprintf("save_every_n_steps = %d\n", s.SaveSteps))
+	content.WriteString("save_model_as = \"safetensors\"\n")
+	content.WriteString(fmt.Sprintf("seed = %d\n", s.TrainSeed))
+
+	// Scheduler
+	if s.Optimizer == "Prodigy" {
+		content.WriteString("lr_scheduler = \"constant\"\n")
+		content.WriteString("optimizer_type = \"Prodigy\"\n")
+		content.WriteString("optimizer_args = [\"decouple=True\", \"weight_decay=0.01\", \"d_coef=1.0\", \"use_bias_correction=True\", \"safeguard_warmup=True\", \"betas=0.9,0.99\"]\n")
+	} else {
+		content.WriteString("lr_scheduler = \"cosine\"\n")
+		content.WriteString(fmt.Sprintf("optimizer_type = %s\n", tomlString(s.Optimizer)))
+		content.WriteString("optimizer_args = [\"weight_decay=0.01\"]\n")
+	}
+
+	// Resume
+	if resumePath := resolveResumePath(s, outputDir); resumePath != "" {
+		content.WriteString(fmt.Sprintf("resume = %s\n", tomlString(filepath.ToSlash(absPath(resumePath)))))
+	}
+
+	// Caching
+	content.WriteString("cache_latents = true\n")
+	content.WriteString("cache_latents_to_disk = true\n")
+
+	// Metadata
+	writeMetadataTOML(&content, projectName, s)
+
+	path := filepath.Join(outDir, projectName+"_ti_training.toml")
+	return path, os.WriteFile(path, []byte(content.String()), 0644)
+}

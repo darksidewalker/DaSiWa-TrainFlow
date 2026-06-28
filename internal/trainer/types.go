@@ -5,6 +5,14 @@ import (
 	"path/filepath"
 )
 
+// TrainingMode selects the training approach.
+type TrainingMode string
+
+const (
+	TrainingModeLoRA TrainingMode = "lora"
+	TrainingModeTI   TrainingMode = "textual_inversion"
+)
+
 type Settings struct {
 	Architecture               string   `json:"architecture"`
 	ProjectName                string   `json:"project_name"`
@@ -21,6 +29,7 @@ type Settings struct {
 	UNetLR                     string   `json:"unet_lr"`
 	TextEncoderLR1             string   `json:"text_encoder_lr1"`
 	TextEncoderLR2             string   `json:"text_encoder_lr2"`
+	TextEncoderLR              string   `json:"text_encoder_lr"` // Generic text encoder LR for Musubi arches
 	Optimizer                  string   `json:"optimizer"`
 	TrainingSteps              int      `json:"training_steps"`
 	SaveSteps                  int      `json:"save_steps"`
@@ -88,6 +97,8 @@ type Settings struct {
 	FP8Scaled                  bool     `json:"fp8_scaled"`
 	SDPA                       bool     `json:"sdpa"`
 	GradientCheckpointing      bool     `json:"gradient_checkpointing"`
+	FullFTTrainTextEncoder     bool     `json:"full_ft_train_text_encoder"`
+	FullFTTextEncoderFallback  bool     `json:"full_ft_text_encoder_fallback"`
 	UsePinnedMemoryBlockSwap   bool     `json:"use_pinned_memory_for_block_swap"`
 	PersistentWorkers          bool     `json:"persistent_data_loader_workers"`
 	SaveStateOnTrainEnd        bool     `json:"save_state_on_train_end"`
@@ -96,6 +107,14 @@ type Settings struct {
 	ExtraTrainArgs             string   `json:"extra_train_args"`
 	ExtraCacheTextArgs         string   `json:"extra_cache_text_args"`
 	ExtraCacheLatentsArgs      string   `json:"extra_cache_latents_args"`
+	// Training mode and Textual Inversion fields
+	TrainingMode       string `json:"trainingMode"` // "lora" or "textual_inversion"
+	TIPlaceholderToken string `json:"tiPlaceholderToken"`
+	TINumVectors       int    `json:"tiNumVectors"`
+	TIInitializerWord  string `json:"tiInitializerWord"`
+	TILearningRate     string `json:"tiLearningRate"`
+	TIPerDeviceBatchSz int    `json:"tiPerDeviceBatchSize"`
+	TIRandomCrop       bool   `json:"tiRandomCrop"`
 }
 
 func DefaultSettings(root string) Settings {
@@ -182,6 +201,11 @@ func DefaultSettings(root string) Settings {
 		PersistentWorkers:          true,
 		SaveStateOnTrainEnd:        true,
 		MetadataAuthor:             "darksidewalker",
+		TrainingMode:               string(TrainingModeLoRA),
+		TIPlaceholderToken:         "*test*",
+		TINumVectors:               16,
+		TILearningRate:             "0.01",
+		TIPerDeviceBatchSz:         1,
 	}
 }
 

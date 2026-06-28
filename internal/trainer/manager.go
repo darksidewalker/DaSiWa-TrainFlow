@@ -146,6 +146,9 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 	if profile.Family == trainingFamilyMusubi {
 		return m.startMusubiSequenced(s, profile, projectName, projectOut, configDir, sampleDir)
 	}
+	if s.TrainingMode == string(TrainingModeTI) {
+		return m.startTextualInversion(s, profile, projectName, projectOut, configDir, sampleDir)
+	}
 	baseRes, maxBucket := analyzeDatasetResolution(s.DatasetPath)
 	promptPath, err := createSamplePrompts(projectName, s, configDir)
 	if err != nil {
@@ -505,6 +508,102 @@ func (m *Manager) startMusubiSequenced(s Settings, profile trainingProfile, proj
 	}()
 
 	return StartResponse{OK: true, Message: "Pipeline started.", Step: "training"}, nil
+}
+
+// startTextualInversion launches a textual inversion (text-embedding) training.
+// It uses the sd-scripts TI pipeline: dataset TOML + CLI args to train_textual_inversion.py.
+func (m *Manager) startTextualInversion(s Settings, profile trainingProfile, projectName, projectOut, configDir, sampleDir string) (StartResponse, error) {
+	// TI is only supported for sd-scripts family (Anima/SDXL)
+	if profile.Family != trainingFamilySDScripts {
+		return StartResponse{OK: false, Message: "Textual inversion is not supported for " + profile.Label}, nil
+	}
+
+	// Pick the correct TI script
+	tiScript := "train_textual_inversion.py"
+	if profile.Architecture == ArchitectureSDXL {
+		tiScript = "sdxl_train_textual_inversion.py"
+	}
+
+	// Validate dataset
+	baseRes, maxBucket := analyzeDatasetResolution(s.DatasetPath)
+	datasetTOML, err := createDatasetTOML(projectName, s, profile, baseRes, maxBucket, configDir)
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	// Create TI training TOML (inherits base config + TI-specific settings)
+	tiTrainingTOML, err := createTITrainingTOML(projectName, s, profile, projectOut, configDir)
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	python := process.PythonExecutable(m.root)
+	if err := validatePythonRuntime(python); err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	trainDir := filepath.Join(m.root, "training", "sd-scripts")
+	trainScript := filepath.Join(trainDir, tiScript)
+	bootstrapScript, err := createTrainingBootstrap(trainDir, trainScript, configDir)
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	args := []string{
+		"-m", "accelerate.commands.launch",
+		"--num_processes=1",
+		"--num_machines=1",
+		"--mixed_precision=bf16",
+		"--dynamo_backend=no",
+		bootstrapScript,
+		"--config_file", tiTrainingTOML,
+		"--dataset_config", datasetTOML,
+	}
+
+	// Append TI-specific CLI args
+	tiArgs := buildTIArgs(s, projectOut, datasetTOML, tiTrainingTOML)
+	args = append(args, tiArgs...)
+
+	cmd := exec.Command(python, args...)
+	cmd.Dir = trainDir
+	cmd.Env = trainingEnv(trainDir)
+	process.Prepare(cmd)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	m.mu.Lock()
+	m.trainingCmd = cmd
+	m.running = true
+	m.activeGPUs = map[string]string{"0": profile.Label + " TI training"}
+	m.logLines = nil
+	m.mu.Unlock()
+
+	m.appendLog(fmt.Sprintf("Starting Textual Inversion (%s)...", profile.Label))
+	m.appendLog(fmt.Sprintf("Token: %s, Vectors: %d", nonEmpty(s.TIPlaceholderToken, "*test*"), nonZero(s.TINumVectors, 16)))
+	m.appendLog("Launching training process...")
+
+	if err := cmd.Start(); err != nil {
+		m.mu.Lock()
+		m.running = false
+		m.trainingCmd = nil
+		m.activeGPUs = map[string]string{}
+		m.mu.Unlock()
+		m.appendLog("Launch failed: " + err.Error())
+		return StartResponse{OK: false, Message: err.Error()}, err
+	}
+
+	sampleToken := m.registerSampleDir(sampleDir)
+	go m.pipeLogs(stdout, sampleToken)
+	go m.pipeLogs(stderr, sampleToken)
+	go m.waitForExit(cmd, sampleToken)
+	return StartResponse{OK: true, Message: "Textual inversion training started."}, nil
 }
 
 // StartDatasetPrep dispatches a dataset preparation action.

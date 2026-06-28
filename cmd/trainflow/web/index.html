@@ -108,6 +108,14 @@
             <div class="panel-title">Training</div>
             <button id="autoCalcButton" class="mini-action" title="Calculate a reasonable starting point from dataset image count and the active Anima or SDXL profile. Keeps paths, project, trigger, prompts, and resume path.">Auto Calc</button>
           </div>
+          <label>
+            <span>Training Mode</span>
+            <select id="training_mode">
+              <option value="lora" selected>LoRA Network</option>
+              <option value="textual_inversion">Textual Inversion (Embedding)</option>
+            </select>
+          </label>
+          <div id="loraFields" class="ti-mode-group">
           <div class="training-grid">
           <label>
             <span>Rank</span>
@@ -164,6 +172,47 @@
           <label>
             <span>Preview Every</span>
             <input id="sample_steps" type="number" min="1" step="1">
+          </label>
+          </div>
+          </div>
+          <div id="tiFields" class="ti-mode-group" style="display:none;">
+          <div class="training-grid">
+          <label title="A unique token not in the tokenizer vocabulary. Use asterisks or a rare character sequence. This token represents the concept you're teaching the model.\">
+            <span>Placeholder Token</span>
+            <input id="ti_placeholder_token" autocomplete="off" placeholder="*test*" value="*test*">
+          </label>
+          <label title="Embedding dimensionality per token. Higher = more expressive but risks overfitting. 8-16 for simple concepts, 32+ for complex subjects. Auto Calc defaults to 16.">
+            <span>Number of Vectors</span>
+            <input id="ti_num_vectors" type="number" min="1" max="256" step="1" value="16">
+          </label>
+          <label title="A word from the tokenizer vocabulary to initialize the embedding vectors from. Use a semantically related word (e.g. &quot;dog&quot; for a new breed, &quot;man&quot; for a person). Leave blank for random initialization.">
+            <span>Initializer Word</span>
+            <input id="ti_initializer_word" autocomplete="off" placeholder="e.g. dog, man, woman, style">
+          </label>
+          <label title="Learning rate for embedding optimization. TI uses much higher LRs than LoRA. 0.001-0.01 is typical. Lower for large datasets, higher for small ones. Auto Calc defaults to 0.01.">
+            <span>TI Learning Rate</span>
+            <input id="ti_learning_rate" autocomplete="off" value="0.01">
+          </label>
+          <label title="Batch size for TI training. Start at 1 and increase if VRAM allows. Higher batch sizes can stabilize training but use more memory.">
+            <span>TI Batch Size</span>
+            <input id="ti_per_device_batch_size" type="number" min="1" step="1" value="1">
+          </label>
+          <label title="Total training steps. TI converges faster than LoRA — 800-3000 steps is typical. Auto Calc targets ~19 repeats per image, clamped to [800, 3000].">
+            <span>Steps</span>
+            <input id="training_steps" type="number" min="1" step="1">
+          </label>
+          <label title="Save embedding checkpoint every N steps. Default picks a divisor that captures a checkpoint near the final step.">
+            <span>Save Every</span>
+            <input id="save_steps" type="number" min="1" step="1">
+          </label>
+          <label title="Generate preview samples every N steps. Lower = more samples but slower training.">
+            <span>Preview Every</span>
+            <input id="sample_steps" type="number" min="1" step="1">
+          </label>
+          </div>
+          <label class="check-row" title="Randomly crop training images during each epoch for data augmentation. Useful for style training to learn composition-invariant features. Incompatible with latent caching.">
+            <input id="ti_random_crop" type="checkbox">
+            <span>Random crop</span>
           </label>
           </div>
         </section>
@@ -480,6 +529,8 @@
           <div class="panel-title">Optimization</div>
           <label class="check-row"><input id="sdpa" type="checkbox"><span>SDPA</span></label>
           <label class="check-row"><input id="gradient_checkpointing" type="checkbox"><span>Gradient checkpointing</span></label>
+          <label class="check-row"><input id="full_ft_train_text_encoder" type="checkbox"><span>Full FT text encoder</span></label>
+          <label class="check-row"><input id="full_ft_text_encoder_fallback" type="checkbox"><span>Full FT text encoder fallback</span></label>
           <label class="check-row"><input id="video_enable_bucket" type="checkbox"><span>Video buckets</span></label>
           <label class="check-row"><input id="save_state_on_train_end" type="checkbox"><span>Save state on end</span></label>
         </div>

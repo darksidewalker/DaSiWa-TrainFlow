@@ -1,6 +1,7 @@
 package trainer
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -415,5 +416,293 @@ func TestValidateTorchCompileRuntime_reportsMissingTriton(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "torch.compile is enabled") || !strings.Contains(err.Error(), "Triton") {
 		t.Fatalf("expected actionable Triton error, got %v", err)
+	}
+}
+
+// --- Textual Inversion tests ---
+
+func TestBuildTIArgs_defaults(t *testing.T) {
+	s := DefaultSettings("/root")
+	args := buildTIArgs(s, "/output", "dataset.toml", "training.toml")
+	// Should contain token_string and num_vectors_per_token
+	found := false
+	for i, a := range args {
+		if a == "--token_string" && i+1 < len(args) && args[i+1] == "*test*" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected --token_string *test*, got: %v", args)
+	}
+}
+
+func TestBuildTIArgs_custom(t *testing.T) {
+	s := DefaultSettings("/root")
+	s.TIPlaceholderToken = "*mytoken*"
+	s.TINumVectors = 32
+	s.TIInitializerWord = "beautiful"
+	s.TILearningRate = "0.005"
+	s.TIPerDeviceBatchSz = 4
+	args := buildTIArgs(s, "/output", "dataset.toml", "training.toml")
+	check := func(flag, want string) {
+		for i, a := range args {
+			if a == flag && i+1 < len(args) && args[i+1] == want {
+				return
+			}
+		}
+		t.Errorf("expected %s %s, got: %v", flag, want, args)
+	}
+	check("--token_string", "*mytoken*")
+	check("--num_vectors_per_token", "32")
+	check("--init_word", "beautiful")
+	check("--learning_rate", "0.005")
+	check("--train_batch_size", "4")
+}
+
+func TestCreateTITrainingTOML_anima(t *testing.T) {
+	tmp := t.TempDir()
+	s := DefaultSettings(tmp)
+	s.Architecture = ArchitectureAnima
+	s.ProjectName = "ti-test"
+	s.DiTPath = filepath.Join(tmp, "dit")
+	s.QwenPath = filepath.Join(tmp, "qwen")
+	s.VAEPath = filepath.Join(tmp, "vae")
+	s.OutputPath = tmp
+	s.TrainingSteps = 1000
+	s.SaveSteps = 100
+	profile := profileFor(s)
+	path, err := createTITrainingTOML(s.ProjectName, s, profile, tmp, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toml := string(data)
+	for _, want := range []string{
+		"pretrained_model_name_or_path",
+		"qwen3",
+		"vae",
+		"learning_rate",
+		"max_train_steps = 1000",
+		"save_every_n_steps = 100",
+		"save_model_as = \"safetensors\"",
+		"cache_latents = true",
+		"cache_latents_to_disk = true",
+	} {
+		if !strings.Contains(toml, want) {
+			t.Errorf("TI TOML missing %q:\n%s", want, toml)
+		}
+	}
+}
+
+func TestCreateTITrainingTOML_sdxl(t *testing.T) {
+	tmp := t.TempDir()
+	s := DefaultSettings(tmp)
+	s.Architecture = ArchitectureSDXL
+	s.ProjectName = "ti-sdxl"
+	s.CheckpointPath = filepath.Join(tmp, "model.safetensors")
+	s.VAEPath = filepath.Join(tmp, "vae")
+	s.OutputPath = tmp
+	s.TrainingSteps = 800
+	s.SaveSteps = 80
+	if err := os.WriteFile(s.CheckpointPath, []byte("stub"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.VAEPath, []byte("stub"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	profile := profileFor(s)
+	path, err := createTITrainingTOML(s.ProjectName, s, profile, tmp, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toml := string(data)
+	if !strings.Contains(toml, "pretrained_model_name_or_path") {
+		t.Error("SDXL TI TOML missing pretrained_model_name_or_path")
+	}
+	if strings.Contains(toml, "qwen3") {
+		t.Error("SDXL TI TOML should not contain qwen3")
+	}
+	if !strings.Contains(toml, "max_train_steps = 800") {
+		t.Error("SDXL TI TOML missing correct steps")
+	}
+}
+
+func TestCreateTITrainingTOML_prodigy(t *testing.T) {
+	tmp := t.TempDir()
+	s := DefaultSettings(tmp)
+	s.Architecture = ArchitectureAnima
+	s.ProjectName = "ti-prod"
+	s.DiTPath = filepath.Join(tmp, "dit")
+	s.QwenPath = filepath.Join(tmp, "qwen")
+	s.VAEPath = filepath.Join(tmp, "vae")
+	s.OutputPath = tmp
+	s.Optimizer = "Prodigy"
+	profile := profileFor(s)
+	path, err := createTITrainingTOML(s.ProjectName, s, profile, tmp, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toml := string(data)
+	if !strings.Contains(toml, "lr_scheduler = \"constant\"") {
+		t.Error("Prodigy TI TOML should use constant scheduler")
+	}
+	if !strings.Contains(toml, "optimizer_type = \"Prodigy\"") {
+		t.Error("Prodigy TI TOML should use Prodigy optimizer")
+	}
+}
+
+func TestDefaultSettings_tiFields(t *testing.T) {
+	s := DefaultSettings("/root")
+	if s.TrainingMode != string(TrainingModeLoRA) {
+		t.Errorf("TrainingMode = %q, want %q", s.TrainingMode, TrainingModeLoRA)
+	}
+	if s.TIPlaceholderToken != "*test*" {
+		t.Errorf("TIPlaceholderToken = %q, want *test*", s.TIPlaceholderToken)
+	}
+	if s.TINumVectors != 16 {
+		t.Errorf("TINumVectors = %d, want 16", s.TINumVectors)
+	}
+	if s.TILearningRate != "0.01" {
+		t.Errorf("TILearningRate = %q, want 0.01", s.TILearningRate)
+	}
+}
+
+func TestTI_AutoCalcDefaults(t *testing.T) {
+	dir := t.TempDir()
+	dsDir := filepath.Join(dir, "dataset")
+	os.MkdirAll(dsDir, 0755)
+	for i := 0; i < 20; i++ {
+		os.WriteFile(filepath.Join(dsDir, fmt.Sprintf("%d.png", i)), []byte{}, 0644)
+	}
+
+	s := Settings{
+		TrainingMode: string(TrainingModeTI),
+		DatasetPath:  dsDir,
+		Architecture: ArchitectureSDXL,
+		ProjectName:  "test_ti_calc",
+	}
+	result, msg := applyStableDefaults(s)
+
+	if result.TINumVectors != 16 {
+		t.Errorf("expected default 16 vectors, got %d", result.TINumVectors)
+	}
+	if result.TIPlaceholderToken != "*test*" {
+		t.Errorf("expected default *test* token, got %q", result.TIPlaceholderToken)
+	}
+	if result.TILearningRate != "0.005" {
+		t.Errorf("expected default 0.005 LR (16 vectors), got %q", result.TILearningRate)
+	}
+	if result.TrainingSteps < 800 || result.TrainingSteps > 3000 {
+		t.Errorf("expected steps in [800,3000], got %d", result.TrainingSteps)
+	}
+	if !strings.Contains(msg, "TI auto calc") {
+		t.Errorf("expected TI auto calc message, got: %s", msg)
+	}
+}
+
+func TestTILearningRateScaling(t *testing.T) {
+	tests := []struct {
+		vectors int
+		want    string
+	}{
+		{8, "0.01"},
+		{16, "0.005"},
+		{32, "0.0025"},
+		{1, "0.08"},       // 0.08 (0.01 * 8/1, clamped to 0.1 max)
+		{100, "0.001"},    // 0.0008 clamped to 0.001 min
+		{0, "0.005"},      // defaults to 16 vectors
+	}
+	for _, tt := range tests {
+		got := recommendedTILearningRate(tt.vectors)
+		if got != tt.want {
+			t.Errorf("recommendedTILearningRate(%d) = %q, want %q", tt.vectors, got, tt.want)
+		}
+	}
+}
+
+func TestTIVramBatchSize(t *testing.T) {
+	// Anima TI: base 7GB, per-batch 2GB, max 8
+	profile := profileFor(Settings{Architecture: ArchitectureAnima})
+
+	// 8GB GPU: (6800 - 7000) < 0, clamped to 1
+	got := recommendedTIBatchSize(profile, 8000)
+	if got != 1 {
+		t.Errorf("8GB GPU: expected batch 1, got %d", got)
+	}
+
+	// 24GB GPU: (20400 - 7000) / 2000 = 6
+	got = recommendedTIBatchSize(profile, 24000)
+	if got != 6 {
+		t.Errorf("24GB GPU: expected batch 6, got %d", got)
+	}
+
+	// 4GB GPU: (3400 - 7000) < 0, clamped to 1
+	got = recommendedTIBatchSize(profile, 4000)
+	if got != 1 {
+		t.Errorf("4GB GPU: expected batch 1, got %d", got)
+	}
+
+	// No VRAM detected: safe default 1
+	got = recommendedTIBatchSize(profile, 0)
+	if got != 1 {
+		t.Errorf("no VRAM: expected batch 1, got %d", got)
+	}
+}
+
+func TestTIVramBatchSizeSDXL(t *testing.T) {
+	// SDXL TI: base 9GB, per-batch 3.5GB, max 8
+	profile := profileFor(Settings{Architecture: ArchitectureSDXL})
+
+	// 12GB GPU: (10200 - 9000) / 3500 = 0, clamped to 1
+	got := recommendedTIBatchSize(profile, 12000)
+	if got != 1 {
+		t.Errorf("12GB GPU: expected batch 1, got %d", got)
+	}
+
+	// 24GB GPU: (20400 - 9000) / 3500 = 3
+	got = recommendedTIBatchSize(profile, 24000)
+	if got != 3 {
+		t.Errorf("24GB GPU: expected batch 3, got %d", got)
+	}
+
+	// 48GB GPU: (40800 - 9000) / 3500 = 9, clamped to 8
+	got = recommendedTIBatchSize(profile, 48000)
+	if got != 8 {
+		t.Errorf("48GB GPU: expected batch 8, got %d", got)
+	}
+}
+
+func TestTI_UserValuesPreserved(t *testing.T) {
+	// User-set LR and batch size should not be overwritten
+	s := Settings{
+		TrainingMode:       string(TrainingModeTI),
+		DatasetPath:        "/nonexistent",
+		Architecture:       "anima",
+		ProjectName:        "test",
+		TILearningRate:     "0.0001",
+		TINumVectors:       32,
+		TIPerDeviceBatchSz: 4,
+	}
+	result, _ := applyStableDefaults(s)
+
+	if result.TILearningRate != "0.0001" {
+		t.Errorf("user LR should be preserved, got %q", result.TILearningRate)
+	}
+	if result.TINumVectors != 32 {
+		t.Errorf("user num_vectors should be preserved, got %d", result.TINumVectors)
+	}
+	if result.TIPerDeviceBatchSz != 4 {
+		t.Errorf("user batch size should be preserved, got %d", result.TIPerDeviceBatchSz)
 	}
 }

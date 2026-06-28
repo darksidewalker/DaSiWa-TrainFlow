@@ -36,7 +36,7 @@ type RAMStats struct {
 type GPUStat struct {
 	Index      int     `json:"index"`
 	Name       string  `json:"name"`
-	Util       *int    `json:"util,omitempty"`       // nil when unavailable
+	Util       *int    `json:"util,omitempty"` // nil when unavailable
 	MemUsed    int     `json:"memUsed"`
 	MemTotal   int     `json:"memTotal"`
 	Temp       *int    `json:"temp,omitempty"`       // nil when unavailable

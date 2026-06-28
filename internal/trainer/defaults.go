@@ -143,6 +143,11 @@ func applyStableDefaultsWithVRAM(s Settings, totalVRAMMB int) (Settings, string)
 		imageCount = 30
 	}
 
+	// Textual Inversion mode: apply TI-specific defaults
+	if s.TrainingMode == string(TrainingModeTI) {
+		return applyTIDefaults(s, profile, imageCount, defaults, totalVRAMMB)
+	}
+
 	s.NetworkRank = defaults.NetworkRank
 	s.NetworkAlpha = defaults.NetworkAlpha
 	if !profile.Video {
@@ -446,6 +451,106 @@ func recommendedVideoInterval(steps int) int {
 func recommendedInterval(steps int) int {
 	ideal := clampInt(roundUpTo(steps/10, 50), 100, 300)
 	return bestDivisorInRange(steps, 100, 300, ideal)
+}
+
+// applyTIDefaults calculates TI-specific defaults.
+// TI loads the full model (UNet + text encoder + VAE) into VRAM for training,
+// so batch size depends on VRAM just like LoRA — even though only the tiny
+// embedding vectors (~8KB) are being updated.
+func applyTIDefaults(s Settings, profile trainingProfile, imageCount int, defaults profileDefaults, totalVRAMMB int) (Settings, string) {
+	if s.TIPlaceholderToken == "" {
+		s.TIPlaceholderToken = "*test*"
+	}
+	if s.TINumVectors <= 0 {
+		s.TINumVectors = 16
+	}
+
+	// TI batch size: based on VRAM. TI loads the full model for forward passes,
+	// so memory usage is similar to LoRA training (just fewer trainable params).
+	if s.TIPerDeviceBatchSz <= 0 {
+		s.TIPerDeviceBatchSz = recommendedTIBatchSize(profile, totalVRAMMB)
+	}
+
+	// TI learning rate: scaled by num_vectors. More vectors = lower LR to prevent
+	// overfitting. Base LR of 0.01 at 8 vectors, scaled linearly.
+	// Reference: https://github.com/kohya-ss/sd-scripts/blob/main/docs/train_textual_inversion.md
+	if s.TILearningRate == "" {
+		s.TILearningRate = recommendedTILearningRate(s.TINumVectors)
+	}
+
+	// TI uses similar step logic to LoRA (target repeats per image)
+	targetRepeats := defaults.TargetRepeats
+	if targetRepeats <= 0 {
+		targetRepeats = 19
+	}
+	steps := int(math.Ceil(float64(imageCount*targetRepeats) / float64(s.TIPerDeviceBatchSz)))
+	tidMin := 800
+	tidMax := 3000
+	steps = clampInt(roundUpTo(steps, 50), tidMin, tidMax)
+	s.TrainingSteps = steps
+	s.SaveSteps = recommendedInterval(steps)
+	s.SampleSteps = recommendedInterval(steps)
+
+	message := fmt.Sprintf(
+		"%s TI auto calc: %d images, %d vectors, LR %s, target %d repeats/image, batch %d, %d steps.",
+		profile.Label,
+		imageCount,
+		s.TINumVectors,
+		s.TILearningRate,
+		targetRepeats,
+		s.TIPerDeviceBatchSz,
+		steps,
+	)
+	if totalVRAMMB > 0 {
+		message = fmt.Sprintf("%s VRAM: %d MB detected.", message, totalVRAMMB)
+	} else {
+		message += " VRAM auto-detect unavailable."
+	}
+	return s, message
+}
+
+// recommendedTIBatchSize picks a TI batch size based on VRAM.
+// TI loads the full model for forward passes, so memory is similar to LoRA.
+func recommendedTIBatchSize(profile trainingProfile, totalVRAMMB int) int {
+	if totalVRAMMB <= 0 {
+		return 1
+	}
+	// TI memory estimates: base model load + per-batch overhead.
+	// SDXL TI: ~9GB base + ~3.5GB/batch, max 8
+	// SD 1.5 TI: ~5GB base + ~1.5GB/batch, max 8
+	// Anima TI: ~7GB base + ~2GB/batch, max 8
+	baseMB, perBatchMB, maxBatch := tiVramEstimate(profile)
+	targetMB := totalVRAMMB * 85 / 100 // use 85% of VRAM for TI
+	batch := (targetMB - baseMB) / perBatchMB
+	return clampInt(batch, 1, maxBatch)
+}
+
+// tiVramEstimate returns base memory, per-batch memory, and max batch for TI training.
+func tiVramEstimate(profile trainingProfile) (baseMB, perBatchMB, maxBatch int) {
+	switch profile.Architecture {
+	case ArchitectureSDXL:
+		// SDXL TI: ~9GB base model + ~3.5GB per batch
+		return 9000, 3500, 8
+	case ArchitectureAnima:
+		// Anima TI: ~7GB base + ~2GB per batch
+		return 7000, 2000, 8
+	default:
+		// SD 1.5 / other: ~5GB base + ~1.5GB per batch
+		return 5000, 1500, 8
+	}
+}
+
+// recommendedTILearningRate scales LR by num_vectors.
+// More vectors = lower LR to prevent overfitting.
+// Base: 0.01 at 8 vectors, scaled linearly.
+func recommendedTILearningRate(numVectors int) string {
+	if numVectors <= 0 {
+		numVectors = 16
+	}
+	// lr = 0.01 * (8 / num_vectors), clamped to [0.001, 0.1]
+	lr := 0.01 * float64(8) / float64(numVectors)
+	lr = math.Max(0.001, math.Min(0.1, lr))
+	return fmt.Sprintf("%.4g", lr)
 }
 
 // bestDivisorInRange finds the divisor of `steps` closest to `ideal` within [lo, hi].

@@ -106,6 +106,8 @@ func buildLTX23MusubiCommand(root string, kind musubiCommandKind, s Settings, da
 		}
 		args = appendBoolArg(args, "--fp8_base", s.FP8Base)
 		args = appendBoolArg(args, "--fp8_scaled", s.FP8Scaled)
+		args = appendBoolArg(args, "--full_ft_train_text_encoder", s.FullFTTrainTextEncoder)
+		args = appendBoolArg(args, "--full_ft_text_encoder_fallback", s.FullFTTextEncoderFallback)
 		args = append(args, "--blocks_to_swap", strconv.Itoa(defaultInt(s.BlocksToSwap, 14)))
 		args = appendBoolArg(args, "--use_pinned_memory_for_block_swap", s.UsePinnedMemoryBlockSwap)
 		args = appendCommonMusubiTrainArgs(args, s)
