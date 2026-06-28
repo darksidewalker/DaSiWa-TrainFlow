@@ -61,14 +61,14 @@ func defaultsForProfile(profile trainingProfile) profileDefaults {
 			TextEncoderLR2:     "1e-5",
 			Optimizer:          "Prodigy",
 			BaseSteps:          1800,
-			TargetRepeats:      39,
+			TargetRepeats:      30,
 			VideoTargetRepeats: 0,
 			VideoTargetEpochs:  0,
 			VideoTargetSteps:   0,
 			VideoMinSteps:      0,
 			VideoMaxSteps:      0,
-			MinSteps:           1560,
-			MaxSteps:           4680,
+			MinSteps:           1200,
+			MaxSteps:           3600,
 		}
 	case ArchitectureLTX23:
 		return profileDefaults{
