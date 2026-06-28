@@ -296,6 +296,26 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.14);
 }
 
+/* Positive prompt fields — green tint */
+#sample_prompts_container textarea {
+  background: rgba(40, 167, 69, 0.07);
+  border-color: rgba(40, 167, 69, 0.35);
+}
+#sample_prompts_container textarea:focus {
+  border-color: rgba(40, 167, 69, 0.7);
+  box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.15);
+}
+
+/* Negative prompt — red tint */
+#neg_prompt {
+  background: rgba(220, 53, 69, 0.07);
+  border-color: rgba(220, 53, 69, 0.35);
+}
+#neg_prompt:focus {
+  border-color: rgba(220, 53, 69, 0.7);
+  box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.15);
+}
+
 .two-col,
 .four-col,
 .training-grid,

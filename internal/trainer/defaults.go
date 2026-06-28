@@ -449,8 +449,8 @@ func recommendedVideoInterval(steps int) int {
 }
 
 func recommendedInterval(steps int) int {
-	ideal := clampInt(roundUpTo(steps/10, 50), 100, 300)
-	return bestDivisorInRange(steps, 100, 300, ideal)
+	ideal := clampInt(roundUpTo(steps/8, 50), 200, 600)
+	return bestDivisorInRange(steps, 200, 600, ideal)
 }
 
 // applyTIDefaults calculates TI-specific defaults.
