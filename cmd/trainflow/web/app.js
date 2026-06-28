@@ -18,9 +18,7 @@ const fields = [
   "training_steps",
   "save_steps",
   "sample_steps",
-  "prompt_1",
-  "prompt_2",
-  "prompt_3",
+  "sample_prompt_count",
   "neg_prompt",
   "width",
   "height",
@@ -104,6 +102,7 @@ const numericFields = new Set([
   "training_steps",
   "save_steps",
   "sample_steps",
+  "sample_prompt_count",
   "width",
   "height",
   "sample_cfg",
@@ -242,9 +241,11 @@ function collectSettings() {
       data[id] = el.value;
     }
   }
-  // Build sample_prompts from the three prompt fields
-  const prompts = [data.prompt_1, data.prompt_2, data.prompt_3].map((s) => s.trim()).filter(Boolean);
-  data.sample_prompts = prompts.length ? prompts : [data.prompt_1 || ""];
+  // Build sample_prompts from dynamically rendered textareas
+  const container = document.getElementById("sample_prompts_container");
+  const textareas = container ? container.querySelectorAll("textarea") : [];
+  const prompts = Array.from(textareas).map((ta) => ta.value.trim()).filter(Boolean);
+  data.sample_prompts = prompts.length ? prompts : [""];
   data.pos_prompt = data.sample_prompts[0] || "";
   data.architecture = normalizeArchitecture(data.architecture);
   data.train_seed = 42;
@@ -262,13 +263,8 @@ function applySettings(data) {
     }
   }
   // Populate prompt fields from sample_prompts or pos_prompt (backward compat)
-  if (Array.isArray(data.sample_prompts) && data.sample_prompts.length) {
-    els.prompt_1.value = data.sample_prompts[0] || "";
-    els.prompt_2.value = data.sample_prompts[1] || "";
-    els.prompt_3.value = data.sample_prompts[2] || "";
-  } else if (data.pos_prompt) {
-    els.prompt_1.value = data.pos_prompt;
-  }
+  const promptCount = Number(data.sample_prompt_count) || 4;
+  renderSamplePrompts(promptCount, data.sample_prompts || []);
   syncVideoNormalizerProxiesFromSettings();
   setArchitecture(data.architecture || "anima", false);
   updateOptimizerLrFields();
@@ -998,6 +994,25 @@ function escapeHTML(value) {
     .replaceAll('"', "&quot;");
 }
 
+// --- Dynamic sample prompt fields ---
+
+function renderSamplePrompts(count, existingPrompts) {
+  const container = document.getElementById("sample_prompts_container");
+  if (!container) return;
+  count = Math.max(1, Math.min(20, count));
+  container.innerHTML = "";
+  for (let i = 0; i < count; i++) {
+    const ta = document.createElement("textarea");
+    ta.rows = 2;
+    ta.placeholder = `prompt ${i + 1}`;
+    ta.value = existingPrompts[i] || "";
+    ta.addEventListener("input", () => queueSave());
+    container.appendChild(ta);
+  }
+  const countEl = document.getElementById("sample_prompt_count");
+  if (countEl) countEl.value = count;
+}
+
 async function boot() {
   const settings = await api("/api/settings");
   applySettings(settings);
@@ -1063,6 +1078,18 @@ for (const id of ["dit_path", "checkpoint_path", "qwen_path", "vae_path"]) {
 els.optimizer.addEventListener("change", () => {
   normalizeOptimizerLearningRate();
 });
+
+// Sample prompt count — re-render textareas when changed
+if (els.sample_prompt_count) {
+  els.sample_prompt_count.addEventListener("change", () => {
+    // Collect current prompt values before re-rendering
+    const container = document.getElementById("sample_prompts_container");
+    const current = container ? Array.from(container.querySelectorAll("textarea")).map(ta => ta.value) : [];
+    const newCount = Math.max(1, Math.min(20, Number(els.sample_prompt_count.value) || 4));
+    renderSamplePrompts(newCount, current);
+    queueSave();
+  });
+}
 
 // Training mode toggle (LoRA vs Textual Inversion)
 if (els.training_mode) {
