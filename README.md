@@ -8,7 +8,7 @@
 [![GitHub Forks](https://img.shields.io/github/forks/darksidewalker/DaSiWa-TrainFlow?style=flat)](https://github.com/darksidewalker/DaSiWa-TrainFlow/network/members)
 [![GitHub Issues](https://img.shields.io/github/issues/darksidewalker/DaSiWa-TrainFlow?style=flat)](https://github.com/darksidewalker/DaSiWa-TrainFlow/issues)
 
-> Portable Go wrapper around the `sd-scripts` Python training stack — train LoRAs for Anima, SDXL/Pony/Illustrious, and LTX 2.3/Wan 2.2 video from a single embedded UI on Linux and Windows.
+> Portable Go wrapper around the `sd-scripts` and Musubi Python training stacks — train LoRAs for Anima, SDXL/Pony/Illustrious, LTX 2.3/Wan 2.2 video, and Krea 2 image models from a single embedded UI on Linux and Windows.
 
 ![TrainFlow preview](assets/DaSiWa-TrainFlow.webp)
 
@@ -58,9 +58,9 @@ The UI opens at `http://127.0.0.1:7860` (or open it manually if your browser doe
 ## Training Workflow
 
 1. Run the **Runtime Tool** and install/update dependencies.
-2. Launch **TrainFlow** and choose a training profile: **Anima**, **SDXL / Pony / Illustrious**, or **LTX 2.3 / Wan 2.2**.
+2. Launch **TrainFlow** and choose a training profile: **Anima**, **SDXL / Pony / Illustrious**, **LTX 2.3 / Wan 2.2**, or **Krea 2**.
 3. Use the **Browse** buttons to select model files and dataset folders.
-4. For video training (LTX/WAN), configure the normalizer (resolution, FPS, duration, etc.) — TrainFlow auto-generates the Musubi dataset TOML and caches text/latents when parameters change.
+4. For video training (LTX/WAN), configure the normalizer (resolution, FPS, duration, etc.) — TrainFlow auto-generates the Musubi dataset TOML and caches text/latents when parameters change. Krea 2 uses the Musubi image pipeline with image-directory TOML and text/latent caching.
 5. Set trigger word, rank, optimizer, steps, and preview settings — or click **Auto Calc** for a profile-aware starting point based on your dataset size.
 6. Click **Start**.
 7. Click **Quit** in the top bar when finished.
@@ -73,7 +73,9 @@ The UI opens at `http://127.0.0.1:7860` (or open it manually if your browser doe
 |---------|-----------|---------|-------------|-------|
 | **Anima** | DiT + Qwen3 + VAE | `networks.lora_anima` | 64px | DiT/Qwen3 text encoder, Anima metadata |
 | **SDXL / Pony / Illustrious** | checkpoint (+ optional VAE) | `networks.lora` | 32px | UNet/text-encoder LR fields, SDPA by default |
-| **LTX 2.3 / Wan 2.2** | video checkpoint | Musubi pipeline | — | Auto TOML, video normalization, sequenced pipeline |
+| **LTX 2.3** | LTX checkpoint + Gemma encoder | Musubi pipeline | 16px | Auto TOML, video normalization, sequenced pipeline |
+| **Wan 2.2** | DiT + T5 + VAE | `networks.lora_wan` | 16px | Musubi video pipeline |
+| **Krea 2** | RAW DiT + Qwen3-VL + Qwen-Image VAE | `networks.lora_krea2` | 32px | Musubi image pipeline, Krea2 text/latent caches |
 
 **Auto Calc** reads the selected profile and dataset image count, then updates rank, learning rates, batch, gradient accumulation, training steps, save interval, and sample interval. It preserves the selected optimizer (Prodigy stays on `lr=1.0` constant; AdamW/AdamW8bit stay on `1e-4` cosine).
 
@@ -83,7 +85,7 @@ The UI opens at `http://127.0.0.1:7860` (or open it manually if your browser doe
 
 ### Embedded Training GUI
 - Single portable Go binary with embedded HTML/CSS/JS — no separate web build step
-- Profile switcher for Anima, SDXL/Pony/Illustrious, and LTX 2.3/Wan 2.2
+- Colored profile switcher for Anima, SDXL/Pony/Illustrious, LTX 2.3, Wan 2.2, and Krea 2
 - Clickable local path browser for datasets, model files, and resume-state folders
 - Autosaved settings in `training/settings.json` with a manual **Save** button
 - Optimizer-aware defaults for Prodigy, AdamW8bit, and AdamW
@@ -99,7 +101,7 @@ The UI opens at `http://127.0.0.1:7860` (or open it manually if your browser doe
 ### Dataset Prep GUI
 - WD EVA02 ONNX caption/tagging
 - LTX/WAN video normalization controls (resolution, FPS, duration, codec, quality, workers, etc.)
-- Automatic Musubi dataset TOML generation and cache rebuild triggers
+- Automatic Musubi dataset TOML generation and cache rebuild triggers for video and image Musubi profiles
 - Resize-copy helper (`training/prepared/<project>`)
 - Combined **Tag + Resize** workflow with configurable thresholds
 
@@ -176,6 +178,23 @@ Or install manually:
 git clone https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3 models/wd-eva02-large-tagger-v3
 curl -L -o models/u2net/u2net.onnx https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx
 ```
+
+</details>
+
+<details>
+<summary><strong>Adding Training Types</strong> — Musubi/script integration hints</summary>
+
+Future training types should be added as small profile-specific adapters instead of one-off UI/backend branches. See `docs/training-type-integration.md` for the full checklist.
+
+Short version:
+- add an architecture constant and `profileFor()` case in `internal/trainer/profiles.go`
+- add profile defaults and model-path validation
+- add a Musubi command builder in `internal/trainer/musubi.go` for cache text, cache latents, and train
+- add/update TOML generation for image vs video datasets
+- add the colored selector button and defaults in `cmd/trainflow/web/`
+- add focused tests in `internal/trainer/musubi_test.go`
+
+Musubi source note: upstream `https://github.com/kohya-ss/musubi-tuner` is the source for current Musubi/Krea2 scripts, but TrainFlow's LTX 2.3 integration depends on LTX2 entrypoints that may live in an LTX-capable Musubi fork/local source. When updating Musubi, preserve or refresh the LTX 2.3 files from that fork instead of blindly deleting them from the vendored tree.
 
 </details>
 

@@ -32,6 +32,7 @@ from diffusers.optimization import (
 from transformers.optimization import SchedulerType, TYPE_TO_SCHEDULER_FUNCTION
 
 from musubi_tuner.dataset import config_utils
+from musubi_tuner.modules.custom_offloading_utils import BlockSwapConfig
 from musubi_tuner.hunyuan_model.models import load_transformer, get_rotary_pos_embed_by_shape
 import musubi_tuner.hunyuan_model.text_encoder as text_encoder_module
 from musubi_tuner.hunyuan_model.vae import load_vae
@@ -186,17 +187,14 @@ def line_to_prompt_dict(line: str) -> dict:
                 prompt_dict["sample_steps"] = max(1, min(1000, int(m.group(1))))
                 continue
 
-            m = re.match(r"l ([\d\.]+)", parg, re.IGNORECASE)
-            if m:  # guidance scale
-                prompt_dict["guidance_scale"] = float(m.group(1))
-                continue
-            m = re.match(r"n (.+)", parg, re.IGNORECASE)
-            if m:  # negative prompt
-                negative_prompt = m.group(1).strip()
-                if len(negative_prompt) >= 2 and negative_prompt[0] == negative_prompt[-1] and negative_prompt[0] in "'\"":
-                    negative_prompt = negative_prompt[1:-1]
-                prompt_dict["negative_prompt"] = negative_prompt
-                continue
+            # m = re.match(r"l ([\d\.]+)", parg, re.IGNORECASE)
+            # if m:  # scale
+            #     prompt_dict["scale"] = float(m.group(1))
+            #     continue
+            # m = re.match(r"n (.+)", parg, re.IGNORECASE)
+            # if m:  # negative prompt
+            #     prompt_dict["negative_prompt"] = m.group(1)
+            #     continue
 
         except ValueError as ex:
             logger.error(f"Exception in parsing / 解析エラー: {parg}")
@@ -808,7 +806,7 @@ class FineTuningTrainer:
 
         if blocks_to_swap > 0:
             logger.info(f"enable swap {blocks_to_swap} blocks to CPU from device: {accelerator.device}")
-            transformer.enable_block_swap(blocks_to_swap, accelerator.device, supports_backward=True)
+            transformer.enable_block_swap(blocks_to_swap, BlockSwapConfig(accelerator.device, supports_backward=True))
             transformer.move_to_device_except_swap_blocks(accelerator.device)
         if args.img_in_txt_in_offloading:
             logger.info("Enable offloading img_in and txt_in to CPU")

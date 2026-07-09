@@ -4,7 +4,6 @@
 # https://github.com/cloneofsimo/lora/blob/master/lora_diffusion/lora.py
 
 import ast
-import json
 import math
 import os
 import re
@@ -15,19 +14,13 @@ import torch.nn as nn
 
 import logging
 
-from musubi_tuner.networks.lora_adaptive_rank import (
-    AdaptiveRankLoRAModuleMixin,
-    AdaptiveRankLoRANetworkMixin,
-    parse_adaptive_rank_network_kwargs,
-)
-
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 HUNYUAN_TARGET_REPLACE_MODULES = ["MMDoubleStreamBlock", "MMSingleStreamBlock"]
 
 
-class LoRAModule(AdaptiveRankLoRAModuleMixin, torch.nn.Module):
+class LoRAModule(torch.nn.Module):
     """
     replaces forward method of the original Linear, instead of replacing the original Linear module.
     """
@@ -43,7 +36,6 @@ class LoRAModule(AdaptiveRankLoRAModuleMixin, torch.nn.Module):
         rank_dropout=None,
         module_dropout=None,
         split_dims: Optional[List[int]] = None,
-        **kwargs,
     ):
         """
         if alpha == 0 or None, alpha is rank (no scaling).
@@ -53,7 +45,7 @@ class LoRAModule(AdaptiveRankLoRAModuleMixin, torch.nn.Module):
         super().__init__()
         self.lora_name = lora_name
 
-        if org_module.__class__.__name__ == "Conv2d":
+        if org_module.__class__.__name__ in ("Conv2d", "Conv3d"):
             in_dim = org_module.in_channels
             out_dim = org_module.out_channels
         else:
@@ -61,7 +53,6 @@ class LoRAModule(AdaptiveRankLoRAModuleMixin, torch.nn.Module):
             out_dim = org_module.out_features
 
         self.lora_dim = lora_dim
-        self._init_adaptive_rank_module_state(kwargs)
         self.split_dims = split_dims
 
         if split_dims is None:
@@ -71,19 +62,18 @@ class LoRAModule(AdaptiveRankLoRAModuleMixin, torch.nn.Module):
                 padding = org_module.padding
                 self.lora_down = torch.nn.Conv2d(in_dim, self.lora_dim, kernel_size, stride, padding, bias=False)
                 self.lora_up = torch.nn.Conv2d(self.lora_dim, out_dim, (1, 1), (1, 1), bias=False)
+            elif org_module.__class__.__name__ == "Conv3d":
+                kernel_size = org_module.kernel_size
+                stride = org_module.stride
+                padding = org_module.padding
+                self.lora_down = torch.nn.Conv3d(in_dim, self.lora_dim, kernel_size, stride, padding, bias=False)
+                self.lora_up = torch.nn.Conv3d(self.lora_dim, out_dim, (1, 1, 1), (1, 1, 1), bias=False)
             else:
                 self.lora_down = torch.nn.Linear(in_dim, self.lora_dim, bias=False)
                 self.lora_up = torch.nn.Linear(self.lora_dim, out_dim, bias=False)
 
             torch.nn.init.kaiming_uniform_(self.lora_down.weight, a=math.sqrt(5))
             torch.nn.init.zeros_(self.lora_up.weight)
-
-            # LoftQ override: if pre-computed (lora_A, lora_B) are provided, use them
-            loftq_init_data = kwargs.get("loftq_init_data", None)
-            if loftq_init_data is not None:
-                lora_A, lora_B = loftq_init_data
-                self.lora_down.weight.data.copy_(lora_A)
-                self.lora_up.weight.data.copy_(lora_B)
         else:
             # conv2d not supported
             assert sum(split_dims) == out_dim, "sum of split_dims must be equal to out_dim"
@@ -103,12 +93,42 @@ class LoRAModule(AdaptiveRankLoRAModuleMixin, torch.nn.Module):
         alpha = self.lora_dim if alpha is None or alpha == 0 else alpha
         self.scale = alpha / self.lora_dim
         self.register_buffer("alpha", torch.tensor(alpha))  # for save/load
+
         # same as microsoft's
         self.multiplier = multiplier
         self.org_module = org_module  # remove in applying
         self.dropout = dropout
         self.rank_dropout = rank_dropout
         self.module_dropout = module_dropout
+
+    def _autocast_enabled_for(self, x):
+        if not x.is_floating_point():
+            return False
+        try:
+            return torch.is_autocast_enabled(x.device.type)
+        except TypeError:
+            return torch.is_autocast_enabled()
+
+    def _lora_input(self, x):
+        if self.split_dims is None:
+            target_dtype = self.lora_down.weight.dtype
+        else:
+            target_dtype = self.lora_down[0].weight.dtype
+        if x.is_floating_point() and x.dtype != target_dtype and not self._autocast_enabled_for(x):
+            return x.to(target_dtype)
+        return x
+
+    def _match_org_dtype(self, value, org_forwarded):
+        """Round ``value`` to the base output dtype.
+
+        Used to bring the LoRA-augmented output back to ``org_forwarded``'s dtype in the
+        autocast-free mixed-dtype regime (e.g. fp32 LoRA on a bf16 base). Callers pass the
+        full ``org_forwarded + delta`` sum here so the (possibly higher-precision) delta is
+        kept through the addition and the result is rounded only once. A no-op when dtypes
+        already match (autocast-on / all-fp32 regimes)."""
+        if value.is_floating_point() and org_forwarded.is_floating_point() and value.dtype != org_forwarded.dtype:
+            return value.to(org_forwarded.dtype)
+        return value
 
     def apply_to(self):
         self.org_forward = self.org_module.forward
@@ -123,8 +143,9 @@ class LoRAModule(AdaptiveRankLoRAModuleMixin, torch.nn.Module):
             if torch.rand(1) < self.module_dropout:
                 return org_forwarded
 
+        lora_input = self._lora_input(x)
         if self.split_dims is None:
-            lx = self.lora_down(x)
+            lx = self.lora_down(lora_input)
 
             # normal dropout
             if self.dropout is not None and self.training:
@@ -137,6 +158,8 @@ class LoRAModule(AdaptiveRankLoRAModuleMixin, torch.nn.Module):
                     mask = mask.unsqueeze(1)  # for Text Encoder
                 elif len(lx.size()) == 4:
                     mask = mask.unsqueeze(-1).unsqueeze(-1)  # for Conv2d
+                elif len(lx.size()) == 5:
+                    mask = mask.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)  # for Conv3d
                 lx = lx * mask
 
                 # scaling for rank dropout: treat as if the rank is changed
@@ -144,15 +167,12 @@ class LoRAModule(AdaptiveRankLoRAModuleMixin, torch.nn.Module):
             else:
                 scale = self.scale
 
-            if self.adaptive_rank:
-                rank_weights = self._adaptive_rank_weights(self.lora_dim, dtype=lx.dtype, device=lx.device)
-                lx = lx * self._reshape_rank_weights(rank_weights, lx)
-
             lx = self.lora_up(lx)
 
-            return org_forwarded + lx * self.multiplier * scale
+            # Add in the (possibly higher-precision) delta dtype, then round the sum once.
+            return self._match_org_dtype(org_forwarded + lx * self.multiplier * scale, org_forwarded)
         else:
-            lxs = [lora_down(x) for lora_down in self.lora_down]
+            lxs = [lora_down(lora_input) for lora_down in self.lora_down]
 
             # normal dropout
             if self.dropout is not None and self.training:
@@ -173,13 +193,10 @@ class LoRAModule(AdaptiveRankLoRAModuleMixin, torch.nn.Module):
             else:
                 scale = self.scale
 
-            if self.adaptive_rank:
-                rank_weights = self._adaptive_rank_weights(self.lora_dim, dtype=lxs[0].dtype, device=lxs[0].device)
-                lxs = [lx * self._reshape_rank_weights(rank_weights, lx) for lx in lxs]
-
             lxs = [lora_up(lx) for lora_up, lx in zip(self.lora_up, lxs)]
 
-            return org_forwarded + torch.cat(lxs, dim=-1) * self.multiplier * scale
+            # Add in the (possibly higher-precision) delta dtype, then round the sum once.
+            return self._match_org_dtype(org_forwarded + torch.cat(lxs, dim=-1) * self.multiplier * scale, org_forwarded)
 
 
 class LoRAInfModule(LoRAModule):
@@ -224,19 +241,37 @@ class LoRAInfModule(LoRAModule):
             if len(weight.size()) == 2:
                 # linear
                 weight = weight + self.multiplier * (up_weight @ down_weight) * self.scale
-            elif down_weight.size()[2:4] == (1, 1):
-                # conv2d 1x1
-                weight = (
-                    weight
-                    + self.multiplier
-                    * (up_weight.squeeze(3).squeeze(2) @ down_weight.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(3)
-                    * self.scale
-                )
+            elif len(weight.size()) == 4:
+                if down_weight.size()[2:4] == (1, 1):
+                    # conv2d 1x1
+                    weight = (
+                        weight
+                        + self.multiplier
+                        * (up_weight.squeeze(3).squeeze(2) @ down_weight.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(3)
+                        * self.scale
+                    )
+                else:
+                    # conv2d 3x3
+                    conved = torch.nn.functional.conv2d(down_weight.permute(1, 0, 2, 3), up_weight).permute(1, 0, 2, 3)
+                    # logger.info(conved.size(), weight.size(), module.stride, module.padding)
+                    weight = weight + self.multiplier * conved * self.scale
+            elif len(weight.size()) == 5:
+                if down_weight.size()[2:5] == (1, 1, 1):
+                    # conv3d 1x1x1
+                    weight = (
+                        weight
+                        + self.multiplier
+                        * (up_weight.squeeze(4).squeeze(3).squeeze(2) @ down_weight.squeeze(4).squeeze(3).squeeze(2))
+                        .unsqueeze(2)
+                        .unsqueeze(3)
+                        .unsqueeze(4)
+                        * self.scale
+                    )
+                else:
+                    conved = torch.nn.functional.conv3d(down_weight.permute(1, 0, 2, 3, 4), up_weight).permute(1, 0, 2, 3, 4)
+                    weight = weight + self.multiplier * conved * self.scale
             else:
-                # conv2d 3x3
-                conved = torch.nn.functional.conv2d(down_weight.permute(1, 0, 2, 3), up_weight).permute(1, 0, 2, 3)
-                # logger.info(conved.size(), weight.size(), module.stride, module.padding)
-                weight = weight + self.multiplier * conved * self.scale
+                raise ValueError(f"Unsupported LoRA target weight shape: {weight.size()}")
 
             # set weight to org_module
             org_sd["weight"] = weight.to(org_device, dtype=dtype)  # back to CPU without non_blocking
@@ -273,30 +308,52 @@ class LoRAInfModule(LoRAModule):
         if len(down_weight.size()) == 2:
             # linear
             weight = self.multiplier * (up_weight @ down_weight) * self.scale
-        elif down_weight.size()[2:4] == (1, 1):
-            # conv2d 1x1
-            weight = (
-                self.multiplier
-                * (up_weight.squeeze(3).squeeze(2) @ down_weight.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(3)
-                * self.scale
-            )
+        elif len(down_weight.size()) == 4:
+            if down_weight.size()[2:4] == (1, 1):
+                # conv2d 1x1
+                weight = (
+                    self.multiplier
+                    * (up_weight.squeeze(3).squeeze(2) @ down_weight.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(3)
+                    * self.scale
+                )
+            else:
+                # conv2d 3x3
+                conved = torch.nn.functional.conv2d(down_weight.permute(1, 0, 2, 3), up_weight).permute(1, 0, 2, 3)
+                weight = self.multiplier * conved * self.scale
+        elif len(down_weight.size()) == 5:
+            if down_weight.size()[2:5] == (1, 1, 1):
+                # conv3d 1x1x1
+                weight = (
+                    self.multiplier
+                    * (up_weight.squeeze(4).squeeze(3).squeeze(2) @ down_weight.squeeze(4).squeeze(3).squeeze(2))
+                    .unsqueeze(2)
+                    .unsqueeze(3)
+                    .unsqueeze(4)
+                    * self.scale
+                )
+            else:
+                conved = torch.nn.functional.conv3d(down_weight.permute(1, 0, 2, 3, 4), up_weight).permute(1, 0, 2, 3, 4)
+                weight = self.multiplier * conved * self.scale
         else:
-            # conv2d 3x3
-            conved = torch.nn.functional.conv2d(down_weight.permute(1, 0, 2, 3), up_weight).permute(1, 0, 2, 3)
-            weight = self.multiplier * conved * self.scale
+            raise ValueError(f"Unsupported LoRA weight shape: {down_weight.size()}")
 
         return weight
 
     def default_forward(self, x):
         # logger.info(f"default_forward {self.lora_name} {x.size()}")
+        lora_input = self._lora_input(x)
         if self.split_dims is None:
-            lx = self.lora_down(x)
+            lx = self.lora_down(lora_input)
             lx = self.lora_up(lx)
-            return self.org_forward(x) + lx * self.multiplier * self.scale
+            org_forwarded = self.org_forward(x)
+            # Add in the (possibly higher-precision) delta dtype, then round the sum once.
+            return self._match_org_dtype(org_forwarded + lx * self.multiplier * self.scale, org_forwarded)
         else:
-            lxs = [lora_down(x) for lora_down in self.lora_down]
+            lxs = [lora_down(lora_input) for lora_down in self.lora_down]
             lxs = [lora_up(lx) for lora_up, lx in zip(self.lora_up, lxs)]
-            return self.org_forward(x) + torch.cat(lxs, dim=-1) * self.multiplier * self.scale
+            org_forwarded = self.org_forward(x)
+            # Add in the (possibly higher-precision) delta dtype, then round the sum once.
+            return self._match_org_dtype(org_forwarded + torch.cat(lxs, dim=-1) * self.multiplier * self.scale, org_forwarded)
 
     def forward(self, x):
         if not self.enabled:
@@ -370,31 +427,7 @@ def create_network(
         else:
             conv_alpha = float(conv_alpha)
 
-    # per-modality dim/alpha overrides
-    audio_dim = kwargs.get("audio_dim", None)
-    if audio_dim is not None:
-        audio_dim = int(audio_dim)
-    audio_alpha = kwargs.get("audio_alpha", None)
-    if audio_alpha is not None:
-        audio_alpha = float(audio_alpha)
-    cross_modal_dim = kwargs.get("cross_modal_dim", None)
-    if cross_modal_dim is not None:
-        cross_modal_dim = int(cross_modal_dim)
-    cross_modal_alpha = kwargs.get("cross_modal_alpha", None)
-    if cross_modal_alpha is not None:
-        cross_modal_alpha = float(cross_modal_alpha)
-    adaptive_rank_kwargs = parse_adaptive_rank_network_kwargs(kwargs)
-
-    # per-modality dropout overrides
-    audio_dropout = kwargs.get("audio_dropout", None)
-    if audio_dropout is not None:
-        audio_dropout = float(audio_dropout)
-    video_dropout = kwargs.get("video_dropout", None)
-    if video_dropout is not None:
-        video_dropout = float(video_dropout)
-    cross_modal_dropout = kwargs.get("cross_modal_dropout", None)
-    if cross_modal_dropout is not None:
-        cross_modal_dropout = float(cross_modal_dropout)
+    # TODO generic rank/dim setting with regular expression
 
     # rank/module dropout
     rank_dropout = kwargs.get("rank_dropout", None)
@@ -439,14 +472,6 @@ def create_network(
         exclude_patterns=exclude_patterns,
         include_patterns=include_patterns,
         verbose=verbose,
-        audio_dim=audio_dim,
-        audio_alpha=audio_alpha,
-        audio_dropout=audio_dropout,
-        video_dropout=video_dropout,
-        cross_modal_dim=cross_modal_dim,
-        cross_modal_alpha=cross_modal_alpha,
-        cross_modal_dropout=cross_modal_dropout,
-        adaptive_rank_config=adaptive_rank_kwargs,
     )
 
     loraplus_lr_ratio = kwargs.get("loraplus_lr_ratio", None)
@@ -461,7 +486,7 @@ def create_network(
     return network
 
 
-class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
+class LoRANetwork(torch.nn.Module):
     # only supports U-Net (DiT), Text Encoders are not supported
 
     def __init__(
@@ -485,14 +510,6 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
         exclude_patterns: Optional[List[str]] = None,
         include_patterns: Optional[List[str]] = None,
         verbose: Optional[bool] = False,
-        audio_dim: Optional[int] = None,
-        audio_alpha: Optional[float] = None,
-        audio_dropout: Optional[float] = None,
-        video_dropout: Optional[float] = None,
-        cross_modal_dim: Optional[int] = None,
-        cross_modal_alpha: Optional[float] = None,
-        cross_modal_dropout: Optional[float] = None,
-        adaptive_rank_config: Optional[Dict[str, Any]] = None,
     ) -> None:
         super().__init__()
         self.multiplier = multiplier
@@ -507,15 +524,6 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
         self.target_replace_modules = target_replace_modules
         self.prefix = prefix
         self.module_kwargs = module_kwargs or {}
-        self.audio_dim = audio_dim
-        self.audio_alpha = audio_alpha
-        self.audio_dropout = audio_dropout
-        self.video_dropout = video_dropout
-        self.cross_modal_dim = cross_modal_dim
-        self.cross_modal_alpha = cross_modal_alpha
-        self.cross_modal_dropout = cross_modal_dropout
-        normalized_adaptive_rank_config = parse_adaptive_rank_network_kwargs(adaptive_rank_config or {})
-        self._init_adaptive_rank_network_state(**normalized_adaptive_rank_config)
 
         self.loraplus_lr_ratio = None
         # self.loraplus_unet_lr_ratio = None
@@ -525,22 +533,9 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
             logger.info("create LoRA network from weights")
         else:
             logger.info(f"create LoRA network. base dim (rank): {lora_dim}, alpha: {alpha}")
-            if self.audio_dim is not None:
-                logger.info(
-                    f"audio modules: dim (rank): {self.audio_dim}, alpha: {self.audio_alpha if self.audio_alpha is not None else alpha}"
-                )
-            if self.cross_modal_dim is not None:
-                logger.info(
-                    f"cross-modal modules: dim (rank): {self.cross_modal_dim}, alpha: {self.cross_modal_alpha if self.cross_modal_alpha is not None else alpha}"
-                )
             logger.info(
                 f"neuron dropout: p={self.dropout}, rank dropout: p={self.rank_dropout}, module dropout: p={self.module_dropout}"
             )
-            if self.audio_dropout is not None or self.video_dropout is not None or self.cross_modal_dropout is not None:
-                logger.info(
-                    f"per-modality dropout overrides: video={self.video_dropout}, audio={self.audio_dropout}, cross-modal={self.cross_modal_dropout}"
-                )
-            self._log_adaptive_rank_configuration(modules_dim)
             # if self.conv_lora_dim is not None:
             #     logger.info(
             #         f"apply LoRA to Conv2d with kernel size (3,3). dim (rank): {self.conv_lora_dim}, alpha: {self.conv_alpha}"
@@ -560,7 +555,6 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
                 exclude_re_patterns.append(re_pattern)
 
         include_re_patterns = []
-        has_include_filter = include_patterns is not None
         if include_patterns is not None:
             for pattern in include_patterns:
                 try:
@@ -581,29 +575,6 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
         ) -> List[LoRAModule]:
             loras = []
             skipped = []
-
-            def is_audio_module(module_name: str) -> bool:
-                return self._is_audio_module(module_name)
-
-            def is_cross_modal_module(module_name: str) -> bool:
-                return self._is_cross_modal_module(module_name)
-
-            def resolve_module_dropout(module_name: str) -> Optional[float]:
-                if is_cross_modal_module(module_name) and self.cross_modal_dropout is not None:
-                    return self.cross_modal_dropout
-                if is_audio_module(module_name):
-                    if self.audio_dropout is not None:
-                        return self.audio_dropout
-                elif self.video_dropout is not None:
-                    return self.video_dropout
-                return self.dropout
-
-            def resolve_adaptive_rank_target(module_name: str) -> Optional[int]:
-                return self.resolve_module_adaptive_rank_target(module_name)
-
-            def resolve_adaptive_rank_weight(module_name: str) -> Optional[float]:
-                return self.resolve_module_adaptive_rank_weight(module_name)
-
             for name, module in root_module.named_modules():
                 if target_replace_mods is None or module.__class__.__name__ in target_replace_mods:
                     if target_replace_mods is None:  # dirty hack for all modules
@@ -612,9 +583,11 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
                     for child_name, child_module in module.named_modules():
                         is_linear = child_module.__class__.__name__ == "Linear"
                         is_conv2d = child_module.__class__.__name__ == "Conv2d"
+                        is_conv3d = child_module.__class__.__name__ == "Conv3d"
                         is_conv2d_1x1 = is_conv2d and child_module.kernel_size == (1, 1)
+                        is_conv3d_1x1 = is_conv3d and child_module.kernel_size == (1, 1, 1)
 
-                        if is_linear or is_conv2d:
+                        if is_linear or is_conv2d or is_conv3d:
                             original_name = (name + "." if name else "") + child_name
                             lora_name = f"{pfx}.{original_name}".replace(".", "_")
 
@@ -633,10 +606,6 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
                                 if verbose:
                                     logger.info(f"exclude: {original_name}")
                                 continue
-                            if has_include_filter and not included:
-                                if verbose:
-                                    logger.info(f"not included: {original_name}")
-                                continue
 
                             # filter by name (not used in the current implementation)
                             if filter is not None and filter not in lora_name:
@@ -644,7 +613,6 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
 
                             dim = None
                             alpha = None
-                            module_dropout_value = resolve_module_dropout(original_name)
 
                             if modules_dim is not None:
                                 # モジュール指定あり
@@ -653,36 +621,18 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
                                     alpha = modules_alpha[lora_name]
                             else:
                                 # 通常、すべて対象とする
-                                if is_linear or is_conv2d_1x1:
+                                if is_linear or is_conv2d_1x1 or is_conv3d_1x1:
                                     dim = default_dim if default_dim is not None else self.lora_dim
                                     alpha = self.alpha
-                                    # per-modality override: audio modules get audio_dim/audio_alpha
-                                    if self.audio_dim is not None and is_audio_module(original_name):
-                                        dim = self.audio_dim
-                                        if self.audio_alpha is not None:
-                                            alpha = self.audio_alpha
-                                    if is_cross_modal_module(original_name):
-                                        if self.cross_modal_dim is not None:
-                                            dim = self.cross_modal_dim
-                                        if self.cross_modal_alpha is not None:
-                                            alpha = self.cross_modal_alpha
                                 elif self.conv_lora_dim is not None:
                                     dim = self.conv_lora_dim
                                     alpha = self.conv_alpha
 
                             if dim is None or dim == 0:
                                 # skipした情報を出力
-                                if is_linear or is_conv2d_1x1 or (self.conv_lora_dim is not None):
+                                if is_linear or is_conv2d_1x1 or is_conv3d_1x1 or (self.conv_lora_dim is not None):
                                     skipped.append(lora_name)
                                 continue
-
-                            # Build per-module kwargs, injecting LoftQ data if available
-                            per_module_kwargs = dict(self.module_kwargs)
-                            loftq_data = per_module_kwargs.pop("loftq_data", None)
-                            if loftq_data is not None and lora_name in loftq_data:
-                                per_module_kwargs["loftq_init_data"] = loftq_data[lora_name]
-                            adaptive_rank_target_value = resolve_adaptive_rank_target(original_name)
-                            adaptive_rank_weight_value = resolve_adaptive_rank_weight(original_name)
 
                             lora = module_class(
                                 lora_name,
@@ -690,17 +640,10 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
                                 self.multiplier,
                                 dim,
                                 alpha,
-                                dropout=module_dropout_value,
+                                dropout=dropout,
                                 rank_dropout=rank_dropout,
                                 module_dropout=module_dropout,
-                                module_path=original_name,
-                                adaptive_rank=self.adaptive_rank,
-                                adaptive_rank_target=adaptive_rank_target_value,
-                                adaptive_rank_quantile=self.adaptive_rank_quantile,
-                                adaptive_rank_weight=adaptive_rank_weight_value,
-                                adaptive_rank_min_rank=self.adaptive_rank_min_rank,
-                                adaptive_rank_init_rank=self.adaptive_rank_init_rank,
-                                **per_module_kwargs,
+                                **self.module_kwargs,
                             )
                             loras.append(lora)
 
@@ -746,14 +689,11 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
             assert lora.lora_name not in names, f"duplicated lora name: {lora.lora_name}"
             names.add(lora.lora_name)
 
-        if self.adaptive_rank_estimate_report is not None:
-            self._apply_adaptive_rank_estimate_overrides()
-
     def prepare_network(self, args):
         """
         called after the network is created
         """
-        self.prepare_adaptive_rank(args)
+        pass
 
     def set_multiplier(self, multiplier):
         self.multiplier = multiplier
@@ -836,81 +776,9 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
         logger.info(f"LoRA+ UNet LR Ratio: {self.loraplus_lr_ratio}")
         # logger.info(f"LoRA+ Text Encoder LR Ratio: {self.loraplus_text_encoder_lr_ratio or self.loraplus_lr_ratio}")
 
-    def prepare_optimizer_params(self, unet_lr: float = 1e-4, audio_lr=None, lr_args=None, **kwargs):
+    def prepare_optimizer_params(self, unet_lr: float = 1e-4, **kwargs):
         self.requires_grad_(True)
 
-        # Parse lr_args from CLI format ["pattern=lr", ...] → dict
-        lr_patterns = {}
-        if lr_args:
-            for entry in lr_args:
-                if "=" not in entry:
-                    raise ValueError(f"Invalid --lr_args entry (expected pattern=lr): {entry}")
-                pattern, lr_str = entry.split("=", 1)
-                lr_patterns[pattern] = float(lr_str)
-
-        # If no custom LR config, use original fast path
-        if not lr_patterns and audio_lr is None:
-            return self._prepare_optimizer_params_simple(unet_lr)
-
-        # Group LoRA modules by resolved LR
-        lr_to_params = {}  # lr_value → {"lora": {name: param}, "plus": {name: param}}
-        lr_to_desc = {}  # lr_value → description string
-
-        for lora in self.unet_loras:
-            resolved_lr = unet_lr  # default
-            desc = "video"
-
-            # Check lr_args patterns first (highest priority)
-            matched_pattern = False
-            for pattern, pattern_lr in lr_patterns.items():
-                if re.search(pattern, lora.lora_name):
-                    resolved_lr = pattern_lr
-                    desc = pattern
-                    matched_pattern = True
-                    break
-
-            # If no pattern matched, check audio_lr
-            if not matched_pattern and audio_lr is not None:
-                if "audio_" in lora.lora_name:
-                    resolved_lr = audio_lr
-                    desc = "audio"
-
-            # Add params to the correct LR group
-            group = lr_to_params.setdefault(resolved_lr, {"lora": {}, "plus": {}})
-            lr_to_desc.setdefault(resolved_lr, desc)
-            for name, param in lora.named_parameters():
-                key = f"{lora.lora_name}.{name}"
-                if self.loraplus_lr_ratio is not None and "lora_up" in name:
-                    group["plus"][key] = param
-                else:
-                    group["lora"][key] = param
-
-        # Build final param groups
-        all_params = []
-        lr_descriptions = []
-        for lr_val in sorted(lr_to_params.keys()):
-            groups = lr_to_params[lr_val]
-            desc = lr_to_desc[lr_val]
-            for key in ("lora", "plus"):
-                if not groups[key]:
-                    continue
-                suffix = " plus" if key == "plus" else ""
-                param_data = {"params": list(groups[key].values()), "lr": lr_val}
-                if key == "plus" and self.loraplus_lr_ratio:
-                    param_data["lr"] = lr_val * self.loraplus_lr_ratio
-                param_data["group_name"] = f"unet_{desc}{suffix}".replace(" ", "_")
-                all_params.append(param_data)
-                lr_descriptions.append(f"unet_{desc}{suffix}")
-
-        # Log group breakdown
-        logger.info(f"LR groups: {len(all_params)} groups created")
-        for param_data, desc in zip(all_params, lr_descriptions):
-            logger.info(f"  {desc}: lr={param_data['lr']}, {len(param_data['params'])} params")
-
-        return all_params, lr_descriptions
-
-    def _prepare_optimizer_params_simple(self, unet_lr: float = 1e-4):
-        """Original single-group optimizer param assembly (no per-module LR)."""
         all_params = []
         lr_descriptions = []
 
@@ -944,7 +812,6 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
                     logger.info("NO LR skipping!")
                     continue
 
-                param_data["group_name"] = "unet_plus" if key == "plus" else "unet"
                 params.append(param_data)
                 descriptions.append("plus" if key == "plus" else "")
 
@@ -967,6 +834,9 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
     def on_epoch_start(self, unet):
         self.train()
 
+    def on_step_start(self):
+        pass
+
     def get_trainable_params(self):
         return self.parameters()
 
@@ -974,8 +844,7 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
         if metadata is not None and len(metadata) == 0:
             metadata = None
 
-        state_dict = self.build_export_state_dict()
-        adaptive_rank_report = self.build_adaptive_rank_report()
+        state_dict = self.state_dict()
 
         if dtype is not None:
             for key in list(state_dict.keys()):
@@ -997,10 +866,6 @@ class LoRANetwork(AdaptiveRankLoRANetworkMixin, torch.nn.Module):
             save_file(state_dict, file, metadata)
         else:
             torch.save(state_dict, file)
-
-        if adaptive_rank_report is not None:
-            with open(self._adaptive_rank_report_path(file), "w", encoding="utf-8") as f:
-                json.dump(adaptive_rank_report, f, indent=2, sort_keys=True)
 
     def backup_weights(self):
         # 重みのバックアップを行う

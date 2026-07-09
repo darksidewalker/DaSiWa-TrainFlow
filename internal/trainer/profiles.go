@@ -13,6 +13,7 @@ const (
 	ArchitectureSDXL  = "sdxl"
 	ArchitectureLTX23 = "ltx23"
 	ArchitectureWAN22 = "wan22"
+	ArchitectureKrea2 = "krea2"
 )
 
 type trainingFamily string
@@ -69,6 +70,16 @@ func profileFor(s Settings) trainingProfile {
 			ResizeDivisor:     16,
 			Video:             true,
 		}
+	case ArchitectureKrea2:
+		return trainingProfile{
+			Architecture:      ArchitectureKrea2,
+			Label:             "Krea 2 Image LoRA",
+			Family:            trainingFamilyMusubi,
+			Script:            "krea2_train_network.py",
+			RequiredPathNames: []string{"dit_path", "qwen_path", "vae_path"},
+			BucketStep:        32,
+			ResizeDivisor:     32,
+		}
 	default:
 		return trainingProfile{
 			Architecture:      ArchitectureAnima,
@@ -91,6 +102,8 @@ func normalizeArchitecture(value string) string {
 		return ArchitectureLTX23
 	case ArchitectureWAN22:
 		return ArchitectureWAN22
+	case ArchitectureKrea2:
+		return ArchitectureKrea2
 	default:
 		return ArchitectureAnima
 	}
@@ -218,6 +231,39 @@ func normalizeSettings(s Settings) Settings {
 			}
 		}
 	}
+	if s.Architecture == ArchitectureKrea2 {
+		if s.NetworkRank <= 0 || s.NetworkRank == 48 || s.NetworkRank == 64 {
+			s.NetworkRank = 32
+		}
+		if s.NetworkAlpha <= 0 || s.NetworkAlpha == 64 {
+			s.NetworkAlpha = 32
+		}
+		if strings.TrimSpace(s.NetworkModule) == "" || strings.HasPrefix(s.NetworkModule, "networks.lora") {
+			s.NetworkModule = "networks.lora_krea2"
+		}
+		if strings.TrimSpace(s.TimestepSampling) == "" || s.TimestepSampling == "shifted_logit_normal" {
+			s.TimestepSampling = "krea2_shift"
+		}
+		if strings.TrimSpace(s.DiscreteFlowShift) == "" || s.DiscreteFlowShift == "5.0" {
+			s.DiscreteFlowShift = "2.5"
+		}
+		if s.Width <= 0 {
+			s.Width = 1024
+		}
+		if s.Height <= 0 {
+			s.Height = 1024
+		}
+		if s.BlocksToSwap <= 0 {
+			s.BlocksToSwap = 14
+		}
+		s.FP8Base = true
+		s.FP8Scaled = true
+		s.SDPA = true
+		s.GradientCheckpointing = true
+		s.UsePinnedMemoryBlockSwap = true
+		s.PersistentWorkers = true
+		s.SaveStateOnTrainEnd = true
+	}
 	if s.NetworkRank <= 0 {
 		s.NetworkRank = 48
 	}
@@ -283,6 +329,16 @@ func (p trainingProfile) validateModelPaths(s Settings) []string {
 		}
 		if !process.FileExists(s.VAEPath) {
 			errs = append(errs, "Wan VAE file not found: "+s.VAEPath)
+		}
+	case ArchitectureKrea2:
+		if !process.FileExists(s.DiTPath) {
+			errs = append(errs, "Krea 2 RAW DiT file not found: "+s.DiTPath)
+		}
+		if !process.FileExists(s.QwenPath) {
+			errs = append(errs, "Krea 2 Qwen3-VL text encoder file not found: "+s.QwenPath)
+		}
+		if !process.FileExists(s.VAEPath) {
+			errs = append(errs, "Krea 2 Qwen-Image VAE file not found: "+s.VAEPath)
 		}
 	case ArchitectureAnima:
 		if !process.FileExists(s.DiTPath) {

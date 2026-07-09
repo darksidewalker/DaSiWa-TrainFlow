@@ -38,7 +38,7 @@
 
 ## はじめに
 
-このリポジトリは、HunyuanVideo、Wan2.1/2.2、FramePack、FLUX.1 Kontext、FLUX.2 dev/klein、Qwen-Image、Z-Image、および [LTX-2](./docs/ltx_2.md)のLoRA学習用のコマンドラインツールです。このリポジトリは非公式であり、それらの公式リポジトリとは関係ありません。
+このリポジトリは、HunyuanVideo、Wan2.1/2.2、FramePack、FLUX.1 Kontext、FLUX.2 dev/klein、Qwen-Image、Z-ImageのLoRA学習用のコマンドラインツールです。このリポジトリは非公式であり、それらの公式リポジトリとは関係ありません。
 
 *リポジトリは開発中です。*
 
@@ -58,40 +58,38 @@
 
 GitHub Discussionsを有効にしました。コミュニティのQ&A、知識共有、技術情報の交換などにご利用ください。バグ報告や機能リクエストにはIssuesを、質問や経験の共有にはDiscussionsをご利用ください。[Discussionはこちら](https://github.com/kohya-ss/musubi-tuner/discussions)
 
-- 2026/02/15
-    - LoHa/LoKrの学習に対応しました。[PR #900](https://github.com/kohya-ss/musubi-tuner/pull/900)
-        - LyCORISのLoHa/LoKrアルゴリズムに基づいて実装されています。LyCORISプロジェクトのKohakuBlueleaf氏に深く感謝します。
-        - 詳細は[ドキュメント](./docs/loha_lokr.md)を参照してください。
-    - Z-Imageのfine-tuningで、blocks_to_swapを使用している場合に、一部のオプティマイザを使用可能にする`--block_swap_optimizer_patch_params`オプションを追加しました。[PR #899](https://github.com/kohya-ss/musubi-tuner/pull/899)
-        - 詳細は[ドキュメント](./docs/zimage.md#finetuning)を参照してください。
+- 2026/06/24
+    - Krea 2に実験的に対応しました（LoRA学習、推論）。[PR #980](https://github.com/kohya-ss/musubi-tuner/pull/980)
+        - 詳細は[ドキュメント](./docs/krea2.md)を参照してください。
 
-- 2026/01/29
-    - Z-Image-Baseのリリースに伴いLoRA、finetuningの動作確認を行い、共に動作することを確認しました。
-    - Z-Imageの[関連ドキュメント](./docs/zimage.md)を修正しました。
-    - またZ-ImageのLoRA学習、finetuningでサンプル画像生成が正しく動作しなかったのを修正しました。以上は[PR #861](https://github.com/kohya-ss/musubi-tuner/pull/861)
+- 2026/06/19
+    - Ideogram4に実験的に対応しました（LoRA学習、推論）。[PR #966](https://github.com/kohya-ss/musubi-tuner/pull/966) について、sdbds氏に深く感謝します。フォローアップは [PR #975](https://github.com/kohya-ss/musubi-tuner/pull/975) および [PR #977](https://github.com/kohya-ss/musubi-tuner/pull/977) で行われました。変更内容の詳細を確認されたい場合はPRをご覧ください。
+        - 詳細は[ドキュメント](./docs/ideogram4.md)を参照してください。
+        - JSON形式のプロンプトが推奨されますが、自然言語での学習も可能なようです。
+        - 学習設定の詳細は不明なためコミュニティからの情報共有を歓迎します。
 
-- 2026/01/24
-    - FLUX.2 [klein]のLoRA学習が動かなかったのを修正しました。またFLUX.2に関する各種の不具合修正、機能追加を行いました。[PR #858](https://github.com/kohya-ss/musubi-tuner/pull/858)
-        - `--model_version`の指定は`flux.2-dev`や`flux.2-klein-4b`等から、`dev`や`klein-4b`等に変更されました。
-        - fp8最適化なども動作します。詳細は[ドキュメント](./docs/flux_2.md)を参照してください。
-        - klein 9B、devモデル、および複数枚の制御画像を用いた学習は十分にテストされていないため、不具合があればIssueで報告してください。
+- 2026/06/16
+    - LoRA（LoHa/LoKr）学習向けに最適化したブロックスワップモード「H2D-only block swap」を追加しました。全アーキテクチャで利用できます。`--block_swap_h2d_only` で有効化します。[PR #972](https://github.com/kohya-ss/musubi-tuner/pull/972)
+        - ベース凍結の学習ではCPUとGPU上のベース重みが同一のため、従来のブロックスワップにおけるdevice→host（D2H）コピーは完全に無駄になります。H2DのみのモードはCPUに恒久的なマスターコピーを保持し、常にhost→deviceのみを転送することで、D2H転送を完全に排除します。これにより学習スループットが向上することがあり、`--fp8_base` / `--fp8_scaled` 使用時に効果が最も大きくなります。
+        - `--gradient_checkpointing` が必須です。ストリーミングに使うGPUリングバッファの数は `--block_swap_ring_size` で調整できます（デフォルト `2`、`1` でVRAM最小）。
+        - ブロックスワップの全オプションをまとめた[ブロックスワップのドキュメント](./docs/block_swap.md)も新設しました。
 
-- 2026/01/21
-    - FLUX.2 [dev]/[klein]のLoRA学習に対応しました。[PR #841](https://github.com/kohya-ss/musubi-tuner/pull/841) https://www.scenario.com のchristopher5106氏に深く感謝します。
-        - 詳細は[ドキュメント](./docs/flux_2.md)を参照してください。
+- 2026/06/13
+    - ネットワーク重みの保存精度を指定する `--save_precision` オプションを追加し、デフォルトの保存精度をfp32に変更しました。[PR #967](https://github.com/kohya-ss/musubi-tuner/pull/967) rockerBOO氏に感謝します。
+        - **破壊的変更**：LoRAファイルの保存精度のデフォルトがfp32に変更されました。
+        - 学習中のLoRA重みの精度を保って保存するための変更です。post-hoc EMA、マージ、抽出、重み解析などの後処理で有用です。
+        - `--mixed_precision bf16`(`fp16`) で学習している場合、LoRAファイルのサイズが従来のおよそ2倍になることがあります。従来と同じ挙動にしたい場合は `--save_precision bf16` （あるいは`fp16`）を指定してください。
+        - 詳細は[HunyuanVideoのドキュメント](./docs/hunyuan_video.md#training--学習)を参照してください。
 
-- 2026/01/17
-    - Z-ImageのComfyUI向けのLoRA変換について、互換性向上のため `convert_lora.py` を使用するように変更しました。[PR #851](https://github.com/kohya-ss/musubi-tuner/pull/851)
-        - 以前の `convert_z_image_lora_to_comfy.py` も引き続き使用可能ですが、nunchakuで正しく動作しない可能性があります。
-        - 詳細は[ドキュメント](./docs/zimage.md#converting-lora-weights-to-diffusers-format-for-comfyui--lora重みをcomfyuiで使用可能なdiffusers形式に変換する)を参照してください。
-        - [Issue #847](https://github.com/kohya-ss/musubi-tuner/issues/847) で解決策を提供してくださったfai-9氏に感謝します。
-    - Qwen-Image-LayeredのLoRA学習で、元画像を学習対象から除外するオプション `--remove_first_image_from_target` を追加しました。[PR #852](https://github.com/kohya-ss/musubi-tuner/pull/852)
-        - 詳細は[ドキュメント](./docs/qwen_image.md#lora-training--lora学習)を参照してください。
+- 2026/06/08
+    - HiDream-O1-Imageに実験的に対応しました（LoRA学習、fine-tuning、推論）。[PR #964](https://github.com/kohya-ss/musubi-tuner/pull/964)
+        - 詳細は[ドキュメント](./docs/hidream_o1.md)を参照してください。
+        - オプションでDINOv3による補助的な知覚損失（perceptual loss）も利用できます。[advanced configのドキュメント](./docs/advanced_config.md)を参照してください。
+        - この対応のベースとなった[PR #947](https://github.com/kohya-ss/musubi-tuner/pull/947)（および続く[PR #955](https://github.com/kohya-ss/musubi-tuner/pull/955)）について、sdbds氏に深く感謝します。変更内容の詳細を確認されたい場合はPRをご覧ください。
 
-- 2026/01/11
-    - Qwen-Image-LayeredのLoRA学習に対応しました。[PR #816](https://github.com/kohya-ss/musubi-tuner/pull/816)
-        - 詳細は[ドキュメント](./docs/qwen_image.md)を参照してください。
-        - キャッシュ作成、学習、推論の各スクリプトで、`--model_version` オプションに `layered` を指定してください。
+- 2026/05/22
+    - コードベースの大規模な内部リファクタリングを行い、コードベースの品質と保守性を向上させました。[PR #950](https://github.com/kohya-ss/musubi-tuner/pull/950)
+        - ユーザーの方には直接の影響がないよう配慮しました。詳細について、および不具合報告などは[こちらのdiscussion](https://github.com/kohya-ss/musubi-tuner/discussions/949)までお願いします。
 
 ### リリースについて
 
@@ -153,15 +151,16 @@ Musubi Tunerの解説記事執筆や、関連ツールの開発に取り組ん�
 - [FLUX.1 Kontext](./docs/flux_kontext.md)
 - [Qwen-Image](./docs/qwen_image.md)
 - [Z-Image](./docs/zimage.md)
+- [HiDream-O1-Image](./docs/hidream_o1.md)
 - [HunyuanVideo 1.5](./docs/hunyuan_video_1_5.md)
 - [Kandinsky 5](./docs/kandinsky5.md)
-- [LTX-2](./docs/ltx_2.md)
 - [FLUX.2](./docs/flux_2.md)
 
 **共通設定・その他:**
 - [データセット設定](./docs/dataset_config.md)
 - [高度な設定](./docs/advanced_config.md)
 - [学習中のサンプル生成](./docs/sampling_during_training.md)
+- [ブロックスワップ（省メモリのためのCPUオフロード）](./docs/block_swap.md)
 - [ツールとユーティリティ](./docs/tools.md)
 - [torch.compileの使用方法](./docs/torch_compile.md)
 

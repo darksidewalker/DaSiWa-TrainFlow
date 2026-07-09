@@ -120,18 +120,26 @@ h1 {
 .architecture-button {
   min-height: 30px;
   padding: 0 11px;
-  border-color: transparent;
-  background: transparent;
-  color: var(--muted);
+  --type-color: 148, 163, 184;
+  border-color: rgba(var(--type-color), 0.22);
+  background: rgba(var(--type-color), 0.08);
+  color: rgb(var(--type-color));
   font-size: 12px;
   font-weight: 800;
 }
 
 .architecture-button.active {
-  border-color: rgba(45, 212, 191, 0.42);
-  background: rgba(45, 212, 191, 0.16);
-  color: var(--teal);
+  border-color: rgba(var(--type-color), 0.62);
+  background: linear-gradient(135deg, rgba(var(--type-color), 0.28), rgba(var(--type-color), 0.12));
+  box-shadow: 0 0 0 1px rgba(var(--type-color), 0.16), 0 8px 22px rgba(var(--type-color), 0.12);
+  color: #ffffff;
 }
+
+.architecture-button[data-architecture="anima"] { --type-color: 45, 212, 191; }
+.architecture-button[data-architecture="sdxl"] { --type-color: 129, 140, 248; }
+.architecture-button[data-architecture="ltx23"] { --type-color: 251, 146, 60; }
+.architecture-button[data-architecture="wan22"] { --type-color: 96, 165, 250; }
+.architecture-button[data-architecture="krea2"] { --type-color: 244, 114, 182; }
 
 .topbar p {
   margin: 4px 0 0;

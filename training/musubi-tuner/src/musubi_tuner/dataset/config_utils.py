@@ -1,16 +1,12 @@
 import argparse
-import copy
 from dataclasses import (
     asdict,
     dataclass,
-    fields,
 )
 import functools
-import os
 import random
 from textwrap import dedent, indent
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
 from typing import List, Optional, Sequence, Tuple, Union, TYPE_CHECKING
@@ -23,16 +19,9 @@ SharedEpoch = Optional["Synchronized[int]"]
 
 import toml
 import voluptuous
-from voluptuous import Any, ExactSequence, MultipleInvalid, Object, Optional as VOptional, Schema
+from voluptuous import Any, ExactSequence, MultipleInvalid, Object, Schema
 
-from musubi_tuner.dataset.image_video_dataset import (
-    ARCHITECTURE_LTX2,
-    ARCHITECTURE_LTX2_FULL,
-    AudioDataset,
-    DatasetGroup,
-    ImageDataset,
-    VideoDataset,
-)
+from musubi_tuner.dataset.image_video_dataset import DatasetGroup, ImageDataset, VideoDataset
 
 import logging
 
@@ -46,40 +35,9 @@ class BaseDatasetParams:
     enable_bucket: bool = False
     bucket_no_upscale: bool = False
     caption_extension: Optional[str] = None
-    caption_field: Optional[str] = None
     batch_size: int = 1
     num_repeats: int = 1
-    video_loss_weight: Optional[float] = None
-    audio_loss_weight: Optional[float] = None
     cache_directory: Optional[str] = None
-    reference_cache_directory: Optional[str] = None
-    reference_cache_directories: Optional[Sequence[str]] = None
-    reference_frames: Optional[int] = None
-    reference_audio_cache_directory: Optional[str] = None
-    reference_audio_cache_directories: Optional[Sequence[str]] = None
-    # Latent guides (directory-based, one guide of each type per item).
-    latent_idx_guide_directory: Optional[str] = None
-    latent_idx_guide_cache_directory: Optional[str] = None
-    latent_idx_guide_frame_idx: int = 0
-    latent_idx_guide_strength: float = 1.0
-    keyframe_guide_directory: Optional[str] = None
-    keyframe_guide_cache_directory: Optional[str] = None
-    keyframe_guide_frame_idx: int = -1
-    keyframe_guide_strength: float = 1.0
-    # Multi-keyframe: extra keyframe guides beyond the single primary above.
-    # If set, each list must have the same length and is appended after the
-    # primary keyframe (which stays in keyframe_guide_directory). Empty/None
-    # falls back to single-keyframe behavior.
-    keyframe_guide_extra_directories: Optional[Sequence[str]] = None
-    keyframe_guide_extra_cache_directories: Optional[Sequence[str]] = None
-    keyframe_guide_extra_frame_idxs: Optional[Sequence[int]] = None
-    keyframe_guide_extra_strengths: Optional[Sequence[float]] = None
-    separate_audio_buckets: bool = False
-    loss_mask_directory: Optional[str] = None
-    default_loss_mask_path: Optional[str] = None
-    loss_mask_use_alpha: bool = False
-    loss_mask_invert: bool = False
-    cache_only: bool = False
     debug_dataset: bool = False
     architecture: str = "no_default"  # short style like "hv" or "wan"
 
@@ -106,34 +64,21 @@ class VideoDatasetParams(BaseDatasetParams):
     video_directory: Optional[str] = None
     video_jsonl_file: Optional[str] = None
     control_directory: Optional[str] = None
-    reference_directory: Optional[str] = None
-    reference_directories: Optional[Sequence[str]] = None
-    reference_audio_directory: Optional[str] = None
-    reference_audio_directories: Optional[Sequence[str]] = None
     target_frames: Sequence[int] = (1,)
     frame_extraction: Optional[str] = "head"
     frame_stride: Optional[int] = 1
     frame_sample: Optional[int] = 1
     max_frames: Optional[int] = 129
     source_fps: Optional[float] = None
-    target_fps: Optional[float] = None
 
     # FramePack dependent parameters
     fp_latent_window_size: Optional[int] = 9
 
 
 @dataclass
-class AudioDatasetParams(BaseDatasetParams):
-    audio_directory: Optional[str] = None
-    audio_jsonl_file: Optional[str] = None
-    audio_bucket_strategy: str = "pad"  # "pad" (default) or "truncate"
-    audio_bucket_interval: float = 2.0  # bucket step in seconds
-
-
-@dataclass
 class DatasetBlueprint:
-    dataset_type: str  # "image", "video", "audio"
-    params: Union[ImageDatasetParams, VideoDatasetParams, AudioDatasetParams]
+    is_image_dataset: bool
+    params: Union[ImageDatasetParams, VideoDatasetParams]
 
 
 @dataclass
@@ -166,43 +111,16 @@ class ConfigSanitizer:
     # datasets schema
     DATASET_ASCENDABLE_SCHEMA = {
         "caption_extension": str,
-        "caption_field": str,
         "batch_size": int,
         "num_repeats": int,
         "resolution": functools.partial(__validate_and_convert_scalar_or_twodim.__func__, int),
         "enable_bucket": bool,
         "bucket_no_upscale": bool,
-        "video_loss_weight": float,
-        "audio_loss_weight": float,
-        "cache_directory": str,
-        "reference_cache_directory": str,
-        "reference_cache_directories": [str],
-        "reference_frames": int,
-        "reference_audio_cache_directory": str,
-        "reference_audio_cache_directories": [str],
-        # LTX-2 latent guides
-        "latent_idx_guide_directory": str,
-        "latent_idx_guide_cache_directory": str,
-        "latent_idx_guide_frame_idx": int,
-        "latent_idx_guide_strength": float,
-        "keyframe_guide_directory": str,
-        "keyframe_guide_cache_directory": str,
-        "keyframe_guide_frame_idx": int,
-        "keyframe_guide_strength": float,
-        "keyframe_guide_extra_directories": [str],
-        "keyframe_guide_extra_cache_directories": [str],
-        "keyframe_guide_extra_frame_idxs": [int],
-        "keyframe_guide_extra_strengths": [float],
-        "separate_audio_buckets": bool,
-        "loss_mask_directory": str,
-        "default_loss_mask_path": str,
-        "loss_mask_use_alpha": bool,
-        "loss_mask_invert": bool,
-        "cache_only": bool,
     }
     IMAGE_DATASET_DISTINCT_SCHEMA = {
         "image_directory": str,
         "image_jsonl_file": str,
+        "cache_directory": str,
         "control_directory": str,
         "multiple_target": bool,
         "fp_latent_window_size": int,
@@ -212,27 +130,17 @@ class ConfigSanitizer:
         "no_resize_control": bool,
         "control_resolution": functools.partial(__validate_and_convert_scalar_or_twodim.__func__, int),
     }
-    AUDIO_DATASET_DISTINCT_SCHEMA = {
-        "audio_directory": str,
-        "audio_jsonl_file": str,
-        "audio_bucket_strategy": str,
-        "audio_bucket_interval": float,
-    }
     VIDEO_DATASET_DISTINCT_SCHEMA = {
         "video_directory": str,
         "video_jsonl_file": str,
         "control_directory": str,
-        "reference_directory": str,
-        "reference_directories": [str],
-        "reference_audio_directory": str,
-        "reference_audio_directories": [str],
         "target_frames": [int],
         "frame_extraction": str,
         "frame_stride": int,
         "frame_sample": int,
         "max_frames": int,
+        "cache_directory": str,
         "source_fps": float,
-        "target_fps": float,
         "fp_latent_window_size": int,
     }
 
@@ -246,18 +154,12 @@ class ConfigSanitizer:
             self.DATASET_ASCENDABLE_SCHEMA,
             self.IMAGE_DATASET_DISTINCT_SCHEMA,
         )
-        self.audio_dataset_schema = self.__merge_dict(
-            self.DATASET_ASCENDABLE_SCHEMA,
-            self.AUDIO_DATASET_DISTINCT_SCHEMA,
-        )
         self.video_dataset_schema = self.__merge_dict(
             self.DATASET_ASCENDABLE_SCHEMA,
             self.VIDEO_DATASET_DISTINCT_SCHEMA,
         )
 
         def validate_flex_dataset(dataset_config: dict):
-            if "audio_directory" in dataset_config or "audio_jsonl_file" in dataset_config:
-                return Schema(self.audio_dataset_schema)(dataset_config)
             if "video_directory" in dataset_config or "video_jsonl_file" in dataset_config:
                 return Schema(self.video_dataset_schema)(dataset_config)
             else:
@@ -272,7 +174,6 @@ class ConfigSanitizer:
             {
                 "general": self.general_schema,
                 "datasets": [self.dataset_schema],
-                VOptional("validation_datasets"): [self.dataset_schema],
             }
         )
         self.argparse_schema = self.__merge_dict(
@@ -319,120 +220,28 @@ class BlueprintGenerator:
 
     # runtime_params is for parameters which is only configurable on runtime, such as tokenizer
     def generate(self, user_config: dict, argparse_namespace: argparse.Namespace, **runtime_params) -> Blueprint:
-        normalized_user_config = self._normalize_runtime_specific_user_config(user_config, runtime_params)
-        sanitized_user_config = self.sanitizer.sanitize_user_config(normalized_user_config)
+        sanitized_user_config = self.sanitizer.sanitize_user_config(user_config)
         sanitized_argparse_namespace = self.sanitizer.sanitize_argparse_namespace(argparse_namespace)
 
-        # Keep CLI reference_frames as a cache-time fallback; only TOML/general should populate dataset overrides.
-        dataset_local_arg_exclusions = {"reference_frames"}
-        argparse_config = {
-            k: v
-            for k, v in vars(sanitized_argparse_namespace).items()
-            if v is not None and k not in dataset_local_arg_exclusions
-        }
+        argparse_config = {k: v for k, v in vars(sanitized_argparse_namespace).items() if v is not None}
         general_config = sanitized_user_config.get("general", {})
 
         dataset_blueprints = []
         for dataset_config in sanitized_user_config.get("datasets", []):
-            is_audio_dataset = "audio_directory" in dataset_config or "audio_jsonl_file" in dataset_config
             is_image_dataset = "image_directory" in dataset_config or "image_jsonl_file" in dataset_config
-            if is_audio_dataset:
-                dataset_params_klass = AudioDatasetParams
-                dataset_type = "audio"
-            elif is_image_dataset:
+            if is_image_dataset:
                 dataset_params_klass = ImageDatasetParams
-                dataset_type = "image"
             else:
                 dataset_params_klass = VideoDatasetParams
-                dataset_type = "video"
 
             params = self.generate_params_by_fallbacks(
                 dataset_params_klass, [dataset_config, general_config, argparse_config, runtime_params]
             )
-            dataset_blueprints.append(DatasetBlueprint(dataset_type, params))
+            dataset_blueprints.append(DatasetBlueprint(is_image_dataset, params))
 
         dataset_group_blueprint = DatasetGroupBlueprint(dataset_blueprints)
 
         return Blueprint(dataset_group_blueprint)
-
-    @staticmethod
-    def _normalize_runtime_specific_user_config(user_config: dict, runtime_params: dict) -> dict:
-        architecture = runtime_params.get("architecture")
-        if architecture not in {ARCHITECTURE_LTX2, ARCHITECTURE_LTX2_FULL}:
-            return user_config
-
-        normalized_user_config = copy.deepcopy(user_config)
-
-        for section_name in ("datasets", "validation_datasets"):
-            dataset_entries = normalized_user_config.get(section_name)
-            if not isinstance(dataset_entries, list):
-                continue
-
-            for i, dataset_config in enumerate(dataset_entries):
-                if not isinstance(dataset_config, dict):
-                    continue
-
-                is_image_dataset = "image_directory" in dataset_config or "image_jsonl_file" in dataset_config
-                if not is_image_dataset:
-                    continue
-
-                reference_directories = dataset_config.get("reference_directories")
-                if reference_directories is not None and not isinstance(reference_directories, list):
-                    raise ValueError(f"{section_name}[{i}] reference_directories must be a list of strings.")
-                if reference_directories:
-                    if len(reference_directories) != 1:
-                        raise ValueError(
-                            f"{section_name}[{i}] uses reference_directories on an image dataset, but image IC-LoRA "
-                            "currently supports only one reference directory. Use a single entry."
-                        )
-                    dataset_config["reference_directory"] = reference_directories[0]
-                reference_directory = dataset_config.get("reference_directory")
-                control_directory = dataset_config.get("control_directory")
-                has_reference_directory = reference_directory is not None
-                has_control_directory = control_directory is not None
-                reference_cache_directories = dataset_config.get("reference_cache_directories")
-                if reference_cache_directories is not None and not isinstance(reference_cache_directories, list):
-                    raise ValueError(f"{section_name}[{i}] reference_cache_directories must be a list of strings.")
-                if reference_cache_directories:
-                    if len(reference_cache_directories) != 1:
-                        raise ValueError(
-                            f"{section_name}[{i}] uses reference_cache_directories on an image dataset, but image IC-LoRA "
-                            "currently supports only one reference cache directory. Use a single entry."
-                        )
-                    dataset_config["reference_cache_directory"] = reference_cache_directories[0]
-                has_reference_cache = dataset_config.get("reference_cache_directory") is not None
-
-                if has_reference_directory and not has_reference_cache:
-                    raise ValueError(
-                        f"{section_name}[{i}] uses reference_directory on an image dataset without "
-                        "reference_cache_directory. For LTX image IC-LoRA datasets, set both "
-                        "reference_directory and reference_cache_directory."
-                    )
-
-                if not has_reference_cache:
-                    continue
-
-                if has_reference_directory and has_control_directory:
-                    raise ValueError(
-                        f"{section_name}[{i}] sets both reference_directory and control_directory. "
-                        "For LTX image IC-LoRA datasets, use reference_directory only."
-                    )
-
-                if has_control_directory:
-                    raise ValueError(
-                        f"{section_name}[{i}] uses control_directory, but LTX image IC-LoRA datasets must use "
-                        "reference_directory when reference_cache_directory is set."
-                    )
-
-                if not has_reference_directory:
-                    raise ValueError(
-                        f"{section_name}[{i}] sets reference_cache_directory, but LTX image IC-LoRA datasets "
-                        "also require reference_directory."
-                    )
-
-                dataset_config["control_directory"] = dataset_config.pop("reference_directory")
-
-        return normalized_user_config
 
     @staticmethod
     def generate_params_by_fallbacks(param_klass, fallbacks: Sequence[dict]):
@@ -461,37 +270,17 @@ def generate_dataset_group_by_blueprint(
     training: bool = False,
     num_timestep_buckets: Optional[int] = None,
     shared_epoch: SharedEpoch = None,
-    reference_downscale: int = 1,
 ) -> DatasetGroup:
-    datasets: List[Union[ImageDataset, VideoDataset, AudioDataset]] = []
+    datasets: List[Union[ImageDataset, VideoDataset]] = []
 
     for dataset_blueprint in dataset_group_blueprint.datasets:
-        if dataset_blueprint.dataset_type == "audio":
-            dataset_klass = AudioDataset
-        elif dataset_blueprint.dataset_type == "image":
+        if dataset_blueprint.is_image_dataset:
             dataset_klass = ImageDataset
         else:
             dataset_klass = VideoDataset
 
         dataset = dataset_klass(**asdict(dataset_blueprint.params))
         datasets.append(dataset)
-
-    try:
-        reference_downscale = max(1, int(reference_downscale or 1))
-    except (TypeError, ValueError):
-        reference_downscale = 1
-    for dataset in datasets:
-        if getattr(dataset, "architecture", None) in {ARCHITECTURE_LTX2, ARCHITECTURE_LTX2_FULL}:
-            dataset.reference_downscale = reference_downscale
-
-    # warn about missing data directories
-    for i, dataset in enumerate(datasets):
-        data_dir = getattr(dataset, "image_directory", None) or getattr(dataset, "video_directory", None) or getattr(dataset, "audio_directory", None)
-        if data_dir is not None and not os.path.isdir(data_dir):
-            logger.warning(
-                "Dataset [%d]: data directory does not exist: %s — this dataset will produce zero items",
-                i, data_dir,
-            )
 
     # assertion
     cache_directories = [dataset.cache_directory for dataset in datasets]
@@ -506,48 +295,22 @@ def generate_dataset_group_by_blueprint(
     info = ""
     for i, dataset in enumerate(datasets):
         is_image_dataset = isinstance(dataset, ImageDataset)
-        is_audio_dataset = isinstance(dataset, AudioDataset)
         info += dedent(
             f"""\
       [Dataset {i}]
-        dataset_type: {"audio" if is_audio_dataset else "image" if is_image_dataset else "video"}
+        is_image_dataset: {is_image_dataset}
         resolution: {dataset.resolution}
         batch_size: {dataset.batch_size}
         num_repeats: {dataset.num_repeats}
-        video_loss_weight: {getattr(dataset, "video_loss_weight", None)}
-        audio_loss_weight: {getattr(dataset, "audio_loss_weight", None)}
         caption_extension: "{dataset.caption_extension}"
-        caption_field: "{getattr(dataset, 'caption_field', None)}"
         enable_bucket: {dataset.enable_bucket}
         bucket_no_upscale: {dataset.bucket_no_upscale}
-        separate_audio_buckets: {getattr(dataset, "separate_audio_buckets", False)}
-        cache_only: {getattr(dataset, "cache_only", False)}
-        loss_mask_directory: "{getattr(dataset, "loss_mask_directory", None)}"
-        default_loss_mask_path: "{getattr(dataset, "default_loss_mask_path", None)}"
-        loss_mask_use_alpha: {getattr(dataset, "loss_mask_use_alpha", False)}
-        loss_mask_invert: {getattr(dataset, "loss_mask_invert", False)}
-        reference_downscale: {getattr(dataset, "reference_downscale", 1)}
-        reference_frames: {getattr(dataset, "reference_frames", None)}
         cache_directory: "{dataset.cache_directory}"
-        reference_cache_directory: "{getattr(dataset, 'reference_cache_directory', None)}"
-        reference_cache_directories: {getattr(dataset, "reference_cache_directories", None)}
         debug_dataset: {dataset.debug_dataset}
     """
         )
 
-        if is_audio_dataset:
-            info += indent(
-                dedent(
-                    f"""\
-        audio_directory: "{dataset.audio_directory}"
-        audio_jsonl_file: "{dataset.audio_jsonl_file}"
-        audio_bucket_strategy: {getattr(dataset, "audio_bucket_strategy", "pad")}
-        audio_bucket_interval: {getattr(dataset, "audio_bucket_interval", 2.0)}
-    \n"""
-                ),
-                "    ",
-            )
-        elif is_image_dataset:
+        if is_image_dataset:
             info += indent(
                 dedent(
                     f"""\
@@ -572,19 +335,12 @@ def generate_dataset_group_by_blueprint(
         video_directory: "{dataset.video_directory}"
         video_jsonl_file: "{dataset.video_jsonl_file}"
         control_directory: "{dataset.control_directory}"
-        reference_directory: "{getattr(dataset, 'reference_directory', None)}"
-        reference_directories: {getattr(dataset, "reference_directories", None)}
-        reference_audio_directory: "{getattr(dataset, 'reference_audio_directory', None)}"
-        reference_audio_directories: {getattr(dataset, "reference_audio_directories", None)}
-        reference_audio_cache_directory: "{getattr(dataset, 'reference_audio_cache_directory', None)}"
-        reference_audio_cache_directories: {getattr(dataset, "reference_audio_cache_directories", None)}
         target_frames: {dataset.target_frames}
         frame_extraction: {dataset.frame_extraction}
         frame_stride: {dataset.frame_stride}
         frame_sample: {dataset.frame_sample}
         max_frames: {dataset.max_frames}
         source_fps: {dataset.source_fps}
-        target_fps: {getattr(dataset, "target_fps", None)}
         fp_latent_window_size: {dataset.fp_latent_window_size}
     \n"""
                 ),
@@ -602,192 +358,6 @@ def generate_dataset_group_by_blueprint(
             dataset.prepare_for_training(num_timestep_buckets=num_timestep_buckets)
 
     return DatasetGroup(datasets)
-
-
-def _manifest_params_with_cache_only(dataset_type: str, params: dict) -> dict:
-    params = dict(params)
-
-    if not params.get("cache_directory"):
-        if dataset_type == "audio":
-            params["cache_directory"] = params.get("audio_directory")
-        elif dataset_type == "image":
-            params["cache_directory"] = params.get("image_directory")
-        else:
-            params["cache_directory"] = params.get("video_directory")
-
-    if not params.get("cache_directory"):
-        raise ValueError(
-            f"cache_directory is required to create a cache-only manifest for {dataset_type} datasets. "
-            "Set cache_directory in dataset config."
-        )
-
-    params["cache_only"] = True
-
-    # Strip source references to guarantee source-free training from manifest.
-    if dataset_type == "audio":
-        params["audio_directory"] = None
-        params["audio_jsonl_file"] = None
-    elif dataset_type == "image":
-        params["image_directory"] = None
-        params["image_jsonl_file"] = None
-        params["control_directory"] = None
-        params["multiple_target"] = False
-    else:
-        params["video_directory"] = None
-        params["video_jsonl_file"] = None
-        params["control_directory"] = None
-        params["reference_directory"] = None
-        params["reference_directories"] = None
-        params["reference_audio_directory"] = None
-        params["reference_audio_directories"] = None
-
-    return params
-
-
-def _blueprint_to_manifest_entries(dataset_group_blueprint: DatasetGroupBlueprint) -> list[dict]:
-    entries: list[dict] = []
-    for dataset_blueprint in dataset_group_blueprint.datasets:
-        params = _manifest_params_with_cache_only(dataset_blueprint.dataset_type, asdict(dataset_blueprint.params))
-        entries.append(
-            {
-                "dataset_type": dataset_blueprint.dataset_type,
-                "params": params,
-            }
-        )
-    return entries
-
-
-def create_cache_only_dataset_manifest(
-    user_config: dict,
-    argparse_namespace: argparse.Namespace,
-    architecture: str,
-    source_dataset_config: Optional[Union[str, Path]] = None,
-) -> dict:
-    blueprint_generator = BlueprintGenerator(ConfigSanitizer())
-    blueprint = blueprint_generator.generate(user_config, argparse_namespace, architecture=architecture)
-
-    manifest: dict = {
-        "format": "musubi_tuner_dataset_manifest",
-        "version": 1,
-        "architecture": architecture,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "datasets": _blueprint_to_manifest_entries(blueprint.dataset_group),
-    }
-
-    if source_dataset_config is not None:
-        manifest["source_dataset_config"] = str(source_dataset_config)
-
-    if user_config.get("validation_datasets"):
-        validation_user_config = {
-            "general": user_config.get("general", {}),
-            "datasets": user_config.get("validation_datasets", []),
-        }
-        validation_blueprint = blueprint_generator.generate(
-            validation_user_config,
-            argparse_namespace,
-            architecture=architecture,
-        )
-        manifest["validation_datasets"] = _blueprint_to_manifest_entries(validation_blueprint.dataset_group)
-
-    return manifest
-
-
-def save_dataset_manifest(manifest: dict, manifest_path: Union[str, Path]) -> Path:
-    path = Path(manifest_path)
-    if path.parent and not path.parent.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(manifest, f, indent=2)
-    return path
-
-
-def load_dataset_manifest(manifest_path: Union[str, Path]) -> dict:
-    path = Path(manifest_path)
-    if not path.is_file():
-        raise ValueError(f"dataset manifest not found: {path}")
-
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            manifest = json.load(f)
-    except Exception as e:
-        raise ValueError(f"failed to load dataset manifest: {path}") from e
-
-    if not isinstance(manifest, dict):
-        raise ValueError(f"invalid dataset manifest format: {path}")
-    if manifest.get("version") != 1:
-        raise ValueError(f"unsupported dataset manifest version: {manifest.get('version')}")
-    if not isinstance(manifest.get("datasets"), list):
-        raise ValueError(f"dataset manifest must contain a datasets array: {path}")
-
-    return manifest
-
-
-def _normalize_manifest_params(params: dict) -> dict:
-    normalized = dict(params)
-    if isinstance(normalized.get("resolution"), list):
-        normalized["resolution"] = tuple(normalized["resolution"])
-    if isinstance(normalized.get("control_resolution"), list):
-        normalized["control_resolution"] = tuple(normalized["control_resolution"])
-    if isinstance(normalized.get("target_frames"), list):
-        normalized["target_frames"] = tuple(normalized["target_frames"])
-    return normalized
-
-
-def _manifest_entries_to_blueprint(entries: Sequence[dict], default_architecture: Optional[str] = None) -> DatasetGroupBlueprint:
-    dataset_blueprints: list[DatasetBlueprint] = []
-    for i, entry in enumerate(entries):
-        dataset_type = entry.get("dataset_type")
-        params = entry.get("params")
-        if dataset_type not in {"audio", "image", "video"}:
-            raise ValueError(f"invalid dataset_type in manifest entry {i}: {dataset_type}")
-        if not isinstance(params, dict):
-            raise ValueError(f"manifest entry {i} has invalid params")
-
-        if dataset_type == "audio":
-            dataset_params_klass = AudioDatasetParams
-        elif dataset_type == "image":
-            dataset_params_klass = ImageDatasetParams
-        else:
-            dataset_params_klass = VideoDatasetParams
-
-        normalized_params = _normalize_manifest_params(params)
-        normalized_params["cache_only"] = True
-        if default_architecture and normalized_params.get("architecture") in {None, "no_default"}:
-            normalized_params["architecture"] = default_architecture
-
-        valid_fields = {f.name for f in fields(dataset_params_klass)}
-        filtered_params = {k: v for k, v in normalized_params.items() if k in valid_fields}
-        dataset_params = dataset_params_klass(**filtered_params)
-        dataset_blueprints.append(DatasetBlueprint(dataset_type, dataset_params))
-
-    return DatasetGroupBlueprint(dataset_blueprints)
-
-
-def generate_dataset_group_by_manifest(
-    manifest: dict,
-    split: str = "train",
-    training: bool = False,
-    num_timestep_buckets: Optional[int] = None,
-    shared_epoch: SharedEpoch = None,
-    reference_downscale: int = 1,
-) -> Optional[DatasetGroup]:
-    if split not in {"train", "validation"}:
-        raise ValueError(f"invalid manifest split: {split}")
-
-    key = "datasets" if split == "train" else "validation_datasets"
-    entries = manifest.get(key, [])
-    if not entries:
-        return None
-
-    default_architecture = manifest.get("architecture")
-    dataset_group_blueprint = _manifest_entries_to_blueprint(entries, default_architecture=default_architecture)
-    return generate_dataset_group_by_blueprint(
-        dataset_group_blueprint,
-        training=training,
-        num_timestep_buckets=num_timestep_buckets,
-        shared_epoch=shared_epoch,
-        reference_downscale=reference_downscale,
-    )
 
 
 def load_user_config(file: str) -> dict:

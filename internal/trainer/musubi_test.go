@@ -34,6 +34,10 @@ func TestProfileForVideoArchitectures(t *testing.T) {
 	if wan.Family != trainingFamilyMusubi || !wan.Video || wan.Script != "wan_train_network.py" {
 		t.Fatalf("bad WAN22 profile: %#v", wan)
 	}
+	krea := profileFor(Settings{Architecture: ArchitectureKrea2})
+	if krea.Family != trainingFamilyMusubi || krea.Video || krea.Script != "krea2_train_network.py" {
+		t.Fatalf("bad Krea2 profile: %#v", krea)
+	}
 }
 
 func TestBuildMusubiCommandsUseVendoredSourceAndSharedPython(t *testing.T) {
@@ -72,6 +76,39 @@ func TestBuildMusubiWAN22Command(t *testing.T) {
 	for _, want := range []string{"wan_train_network.py", "--task i2v-A14B", "--dit /models/wan.safetensors", "--t5 /models/t5.pth", "--vae /models/vae.safetensors", "--network_module networks.lora_wan"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("WAN train command missing %q in %q", want, joined)
+		}
+	}
+}
+
+func TestBuildMusubiKrea2Commands(t *testing.T) {
+	settings := normalizeSettings(Settings{Architecture: ArchitectureKrea2, DiTPath: "/models/krea2-raw.safetensors", QwenPath: "/models/qwen3-vl.safetensors", VAEPath: "/models/qwen-image-vae.safetensors", ProjectName: "krea_project"})
+	cmd, err := buildMusubiCommand(t.TempDir(), musubiCommandTrain, settings, "/tmp/dataset.toml", "/tmp/out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(cmd.Args, " ")
+	for _, want := range []string{"src/musubi_tuner/krea2_train_network.py", "--dit /models/krea2-raw.safetensors", "--text_encoder /models/qwen3-vl.safetensors", "--vae /models/qwen-image-vae.safetensors", "--network_module networks.lora_krea2", "--fp8_scaled"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("Krea2 train command missing %q in %q", want, joined)
+		}
+	}
+}
+
+func TestCreateMusubiKrea2DatasetTOML(t *testing.T) {
+	dir := t.TempDir()
+	settings := normalizeSettings(Settings{Architecture: ArchitectureKrea2, DatasetPath: dir, TrainBatchSize: 1})
+	path, err := createMusubiDatasetTOML("krea", settings, profileFor(settings), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{"[general]", "resolution = [1024, 1024]", "image_directory = ", "cache_directory = ", "enable_bucket = true"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("Krea2 dataset TOML missing %q:\n%s", want, text)
 		}
 	}
 }

@@ -34,6 +34,9 @@ var requiredMusubiFiles = []string{
 	"wan_train_network.py",
 	"wan_cache_latents.py",
 	"wan_cache_text_encoder_outputs.py",
+	"src/musubi_tuner/krea2_train_network.py",
+	"src/musubi_tuner/krea2_cache_latents.py",
+	"src/musubi_tuner/krea2_cache_text_encoder_outputs.py",
 }
 
 func musubiRoot(root string) string {
@@ -57,6 +60,8 @@ func buildMusubiCommand(root string, kind musubiCommandKind, s Settings, dataset
 		return buildLTX23MusubiCommand(root, kind, s, datasetTOML, outputDir)
 	case ArchitectureWAN22:
 		return buildWAN22MusubiCommand(root, kind, s, datasetTOML, outputDir)
+	case ArchitectureKrea2:
+		return buildKrea2MusubiCommand(root, kind, s, datasetTOML, outputDir)
 	default:
 		return musubiCommand{}, fmt.Errorf("not a Musubi architecture: %s", s.Architecture)
 	}
@@ -154,6 +159,47 @@ func buildWAN22MusubiCommand(root string, kind musubiCommandKind, s Settings, da
 	return newMusubiCommand(root, args), nil
 }
 
+func buildKrea2MusubiCommand(root string, kind musubiCommandKind, s Settings, datasetTOML, outputDir string) (musubiCommand, error) {
+	args := []string{}
+	switch kind {
+	case musubiCommandCacheText:
+		args = []string{"src/musubi_tuner/krea2_cache_text_encoder_outputs.py", "--dataset_config", datasetTOML, "--text_encoder", s.QwenPath, "--batch_size", "4"}
+		args = appendFields(args, s.ExtraCacheTextArgs)
+	case musubiCommandCacheLatents:
+		args = []string{"src/musubi_tuner/krea2_cache_latents.py", "--dataset_config", datasetTOML, "--vae", s.VAEPath, "--vae_dtype", nonEmpty(s.MixedPrecision, "bf16")}
+		args = appendFields(args, s.ExtraCacheLatentsArgs)
+	case musubiCommandTrain:
+		args = []string{"-m", "accelerate.commands.launch",
+			"--num_cpu_threads_per_process", strconv.Itoa(defaultInt(s.NumCPUThreads, 8)),
+			"--mixed_precision", nonEmpty(s.MixedPrecision, "bf16"),
+			"src/musubi_tuner/krea2_train_network.py",
+			"--mixed_precision", nonEmpty(s.MixedPrecision, "bf16"),
+			"--optimizer_type", musubiOptimizer(s.Optimizer),
+			"--learning_rate", nonEmpty(s.LearningRate, "1.0"),
+			"--optimizer_args", "decouple=True", "weight_decay=0.01", "d_coef=2.0", "use_bias_correction=True", "safeguard_warmup=True",
+			"--lr_scheduler", "constant",
+			"--timestep_sampling", nonEmpty(s.TimestepSampling, "krea2_shift"),
+			"--discrete_flow_shift", nonEmpty(s.DiscreteFlowShift, "2.5"),
+			"--dataset_config", datasetTOML,
+			"--output_dir", outputDir,
+			"--output_name", projectNameForSettings(s),
+			"--dit", s.DiTPath,
+			"--text_encoder", s.QwenPath,
+			"--vae", s.VAEPath,
+		}
+		args = appendBoolArg(args, "--fp8_base", s.FP8Base)
+		args = appendBoolArg(args, "--fp8_scaled", s.FP8Scaled)
+		if s.BlocksToSwap > 0 {
+			args = append(args, "--blocks_to_swap", strconv.Itoa(s.BlocksToSwap))
+		}
+		args = appendBoolArg(args, "--use_pinned_memory_for_block_swap", s.UsePinnedMemoryBlockSwap)
+		args = appendCommonMusubiTrainArgs(args, s)
+	default:
+		return musubiCommand{}, fmt.Errorf("unknown Musubi command kind: %s", kind)
+	}
+	return newMusubiCommand(root, args), nil
+}
+
 func newMusubiCommand(root string, args []string) musubiCommand {
 	return musubiCommand{
 		Program: process.PythonExecutable(root),
@@ -200,7 +246,7 @@ func appendCommonMusubiTrainArgs(args []string, s Settings) []string {
 
 func createMusubiDatasetTOML(projectName string, s Settings, profile trainingProfile, outDir string) (string, error) {
 	if !profile.Video {
-		return "", fmt.Errorf("profile %s is not a video Musubi profile", profile.Architecture)
+		return createMusubiImageDatasetTOML(projectName, s, profile, outDir)
 	}
 	frames, err := parseIntCSV(nonEmpty(s.VideoTargetFrames, "1,65,129"))
 	if err != nil {
@@ -220,6 +266,27 @@ func createMusubiDatasetTOML(projectName string, s Settings, profile trainingPro
 	content.WriteString(fmt.Sprintf("target_frames = [%s]\n", joinInts(frames)))
 	content.WriteString(fmt.Sprintf("frame_extraction = %s\n", tomlString(nonEmpty(s.VideoFrameExtraction, "full"))))
 	content.WriteString(fmt.Sprintf("num_repeats = %d\n", repeats))
+	path := filepath.Join(outDir, projectName+"_musubi_dataset.toml")
+	return path, os.WriteFile(path, []byte(content.String()), 0644)
+}
+
+func createMusubiImageDatasetTOML(projectName string, s Settings, profile trainingProfile, outDir string) (string, error) {
+	if profile.Family != trainingFamilyMusubi {
+		return "", fmt.Errorf("profile %s is not a Musubi profile", profile.Architecture)
+	}
+	width := defaultInt(s.Width, 1024)
+	height := defaultInt(s.Height, 1024)
+	content := strings.Builder{}
+	content.WriteString("[general]\n")
+	content.WriteString(fmt.Sprintf("resolution = [%d, %d]\n", width, height))
+	content.WriteString(fmt.Sprintf("batch_size = %d\n", defaultInt(s.TrainBatchSize, 1)))
+	content.WriteString("caption_extension = \".txt\"\n")
+	content.WriteString("enable_bucket = true\n")
+	content.WriteString("bucket_no_upscale = false\n\n")
+	content.WriteString("[[datasets]]\n")
+	content.WriteString(fmt.Sprintf("image_directory = %s\n", tomlString(filepath.ToSlash(absPath(s.DatasetPath)))))
+	content.WriteString(fmt.Sprintf("cache_directory = %s\n", tomlString(filepath.ToSlash(absPath(filepath.Join(outDir, "cache"))))))
+	content.WriteString("num_repeats = 1\n")
 	path := filepath.Join(outDir, projectName+"_musubi_dataset.toml")
 	return path, os.WriteFile(path, []byte(content.String()), 0644)
 }

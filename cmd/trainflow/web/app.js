@@ -271,7 +271,7 @@ function applySettings(data) {
 }
 
 function normalizeArchitecture(value) {
-  return ["anima", "sdxl", "ltx23", "wan22"].includes(value) ? value : "anima";
+  return ["anima", "sdxl", "ltx23", "wan22", "krea2"].includes(value) ? value : "anima";
 }
 
 function isVideoArchitecture(architecture) {
@@ -438,6 +438,11 @@ function setArchitecture(value, save = true) {
     qwenLabel.textContent = "T5 Text Encoder";
     vaeLabel.textContent = "Wan VAE";
     applyVideoDefaults("wan22", save);
+  } else if (architecture === "krea2") {
+    ditLabel.textContent = "Krea 2 RAW DiT";
+    qwenLabel.textContent = "Qwen3-VL Text Encoder";
+    vaeLabel.textContent = "Qwen-Image VAE";
+    applyKrea2Defaults(save);
   } else {
     ditLabel.textContent = "DiT";
     qwenLabel.textContent = "Qwen3";
@@ -461,6 +466,29 @@ function applyImageDefaults(architecture) {
     els.network_rank.value = 48;
     els.network_alpha.value = 32;
   }
+}
+
+function applyKrea2Defaults(save) {
+  if (!save) return;
+  if (!els.optimizer.value) els.optimizer.value = "Prodigy";
+  els.network_rank.value = 32;
+  els.network_alpha.value = 32;
+  els.network_module.value = "networks.lora_krea2";
+  els.timestep_sampling.value = "krea2_shift";
+  els.discrete_flow_shift.value = els.discrete_flow_shift.value || "2.5";
+  els.width.value = els.width.value || 1024;
+  els.height.value = els.height.value || 1024;
+  els.mixed_precision.value = els.mixed_precision.value || "bf16";
+  els.num_cpu_threads.value = els.num_cpu_threads.value || 8;
+  els.blocks_to_swap.value = els.blocks_to_swap.value || 14;
+  els.fp8_base.checked = true;
+  els.fp8_scaled.checked = true;
+  els.sdpa.checked = true;
+  els.gradient_checkpointing.checked = true;
+  els.use_pinned_memory_for_block_swap.checked = true;
+  els.persistent_data_loader_workers.checked = true;
+  els.save_state_on_train_end.checked = true;
+  if (!els.target_epochs.value) els.target_epochs.value = 6;
 }
 
 function applyVideoDefaults(architecture, save) {

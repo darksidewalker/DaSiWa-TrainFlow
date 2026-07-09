@@ -17,6 +17,7 @@
             <button type="button" class="architecture-button" data-architecture="sdxl" title="Use SDXL LoRA training for SDXL, Pony, Illustrious, and compatible checkpoint bases.">SDXL</button>
             <button type="button" class="architecture-button" data-architecture="ltx23" title="Use Musubi LTX 2.3 video LoRA training.">LTX 2.3</button>
             <button type="button" class="architecture-button" data-architecture="wan22" title="Use Musubi Wan 2.2 video LoRA training.">Wan 2.2</button>
+            <button type="button" class="architecture-button" data-architecture="krea2" title="Use Musubi Krea 2 image LoRA training with RAW DiT, Qwen3-VL text encoder, and Qwen-Image VAE.">Krea 2</button>
           </div>
         </div>
         <div class="top-status">
@@ -73,7 +74,7 @@
 
         <section class="panel model-panel">
           <div class="panel-title">Model Paths</div>
-          <label class="profile-field profile-anima profile-wan22">
+          <label class="profile-field profile-anima profile-wan22 profile-krea2">
             <span id="ditLabel">DiT</span>
             <div class="path-row">
               <input id="dit_path" autocomplete="off">
@@ -87,14 +88,14 @@
               <button class="browse-button" data-target="checkpoint_path" data-mode="model" title="Choose checkpoint">...</button>
             </div>
           </label>
-          <label class="profile-field profile-anima profile-ltx23 profile-wan22">
+          <label class="profile-field profile-anima profile-ltx23 profile-wan22 profile-krea2">
             <span id="qwenLabel">Qwen3</span>
             <div class="path-row">
               <input id="qwen_path" autocomplete="off">
               <button class="browse-button" data-target="qwen_path" data-mode="model" title="Choose text encoder model">...</button>
             </div>
           </label>
-          <label class="profile-field profile-anima profile-sdxl profile-wan22">
+          <label class="profile-field profile-anima profile-sdxl profile-wan22 profile-krea2">
             <span id="vaeLabel">VAE</span>
             <div class="path-row">
               <input id="vae_path" autocomplete="off">
