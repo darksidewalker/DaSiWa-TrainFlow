@@ -307,6 +307,13 @@ func (m *Manager) runPipelineStep(ctx context.Context, name, activity string, bu
 
 	err = <-errCh
 	if err != nil {
+		m.mu.Lock()
+		if m.trainingCmd == cmd {
+			m.running = false
+			m.trainingCmd = nil
+			m.activeGPUs = map[string]string{}
+		}
+		m.mu.Unlock()
 		return StartResponse{OK: false, Message: err.Error()}, err
 	}
 
@@ -375,19 +382,38 @@ func (m *Manager) startMusubiSequenced(s Settings, profile trainingProfile, proj
 		m.mu.Unlock()
 		return StartResponse{OK: false, Message: "Training is already running."}, nil
 	}
-	m.mu.Unlock()
-
-	m.mu.Lock()
+	m.running = true
+	m.trainingCmd = nil
+	m.activeGPUs = map[string]string{"0": profile.Label + " pipeline"}
 	m.logLines = nil
 	m.mu.Unlock()
 
-	sampleToken := m.registerSampleDir(sampleDir)
+	go func() {
+		resp, err := m.runMusubiSequenced(s, profile, projectName, projectOut, configDir, sampleDir)
+		if err != nil {
+			m.appendLog("Pipeline failed: " + err.Error())
+		} else if !resp.OK && resp.Message != "" {
+			m.appendLog("Pipeline failed: " + resp.Message)
+		}
+		if err != nil || !resp.OK {
+			m.mu.Lock()
+			m.running = false
+			m.trainingCmd = nil
+			m.activeGPUs = map[string]string{}
+			m.mu.Unlock()
+			m.hub.BroadcastJSON("training_state", map[string]bool{"running": false})
+		}
+	}()
 
 	m.appendLog(fmt.Sprintf("Starting %s (%s) pipeline...", projectName, profile.Label))
+	return StartResponse{OK: true, Message: "Pipeline started.", Step: "pipeline"}, nil
+}
+
+func (m *Manager) runMusubiSequenced(s Settings, profile trainingProfile, projectName, projectOut, configDir, sampleDir string) (StartResponse, error) {
+	sampleToken := m.registerSampleDir(sampleDir)
 
 	// Use a cancellable context for the entire pipeline
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	// Video normalization is now manual-only (triggered via StartDatasetPrep "normalize-video").
 	// The pipeline below handles: dataset TOML, text cache, latent cache, then training.

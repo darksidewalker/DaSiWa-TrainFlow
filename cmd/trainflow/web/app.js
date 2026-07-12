@@ -965,6 +965,10 @@ function connectWS() {
         refreshImages();
       }
     }
+    if (msg.type === "app_quit") {
+      window.close();
+      document.body.innerHTML = "<main class=\"panel\"><h1>TrainFlow closed.</h1><p>You can close this window.</p></main>";
+    }
   });
 }
 

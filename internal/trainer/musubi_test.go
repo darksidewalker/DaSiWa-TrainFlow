@@ -81,15 +81,35 @@ func TestBuildMusubiWAN22Command(t *testing.T) {
 }
 
 func TestBuildMusubiKrea2Commands(t *testing.T) {
-	settings := normalizeSettings(Settings{Architecture: ArchitectureKrea2, DiTPath: "/models/krea2-raw.safetensors", QwenPath: "/models/qwen3-vl.safetensors", VAEPath: "/models/qwen-image-vae.safetensors", ProjectName: "krea_project"})
+	settings := normalizeSettings(Settings{Architecture: ArchitectureKrea2, DiTPath: "/models/krea2-raw.safetensors", QwenPath: "/models/qwen3-vl.safetensors", VAEPath: "/models/qwen-image-vae.safetensors", ProjectName: "krea_project", TriggerWord: "trigger"})
 	cmd, err := buildMusubiCommand(t.TempDir(), musubiCommandTrain, settings, "/tmp/dataset.toml", "/tmp/out")
 	if err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(cmd.Args, " ")
-	for _, want := range []string{"src/musubi_tuner/krea2_train_network.py", "--dit /models/krea2-raw.safetensors", "--text_encoder /models/qwen3-vl.safetensors", "--vae /models/qwen-image-vae.safetensors", "--network_module networks.lora_krea2", "--fp8_scaled"} {
+	for _, want := range []string{"--num_processes=1", "--num_machines=1", "--dynamo_backend=no", "src/musubi_tuner/krea2_train_network.py", "--dit /models/krea2-raw.safetensors", "--text_encoder /models/qwen3-vl.safetensors", "--vae /models/qwen-image-vae.safetensors", "--network_module networks.lora_krea2", "--fp8_scaled"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("Krea2 train command missing %q in %q", want, joined)
+		}
+	}
+	if strings.Contains(joined, "--metadata_trigger_phrase") {
+		t.Fatalf("Musubi train command must not pass unsupported --metadata_trigger_phrase: %q", joined)
+	}
+}
+
+func TestBuildMusubiKrea2LatentCacheOmitsVAEDtype(t *testing.T) {
+	settings := normalizeSettings(Settings{Architecture: ArchitectureKrea2, VAEPath: "/models/qwen-image-vae.safetensors", MixedPrecision: "bf16"})
+	cmd, err := buildMusubiCommand(t.TempDir(), musubiCommandCacheLatents, settings, "/tmp/dataset.toml", "/tmp/out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(cmd.Args, " ")
+	if strings.Contains(joined, "--vae_dtype") {
+		t.Fatalf("Krea2 latent cache must not pass --vae_dtype: %q", joined)
+	}
+	for _, want := range []string{"src/musubi_tuner/krea2_cache_latents.py", "--dataset_config /tmp/dataset.toml", "--vae /models/qwen-image-vae.safetensors"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("Krea2 latent cache command missing %q in %q", want, joined)
 		}
 	}
 }

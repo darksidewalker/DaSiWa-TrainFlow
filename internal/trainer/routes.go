@@ -102,6 +102,7 @@ func RegisterRoutes(mux *http.ServeMux, embedded fs.FS, manager *Manager, hub *H
 			return
 		}
 		writeJSON(w, StartResponse{OK: true, Message: "Shutting down TrainFlow."})
+		hub.BroadcastJSON("app_quit", map[string]bool{"quit": true})
 		if onQuit != nil {
 			onQuit()
 		}

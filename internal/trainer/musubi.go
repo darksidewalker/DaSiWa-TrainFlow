@@ -90,9 +90,9 @@ func buildLTX23MusubiCommand(root string, kind musubiCommandKind, s Settings, da
 		}
 		args = appendFields(args, s.ExtraCacheLatentsArgs)
 	case musubiCommandTrain:
-		args = []string{"-m", "accelerate.commands.launch",
-			"--num_cpu_threads_per_process", strconv.Itoa(defaultInt(s.NumCPUThreads, 8)),
-			"--mixed_precision", nonEmpty(s.MixedPrecision, "bf16"),
+		args = []string{"-m", "accelerate.commands.launch"}
+		args = append(args, commonAccelerateArgs(s)...)
+		args = append(args,
 			"ltx2_train_network.py",
 			"--mixed_precision", nonEmpty(s.MixedPrecision, "bf16"),
 			"--optimizer_type", musubiOptimizer(s.Optimizer),
@@ -108,7 +108,7 @@ func buildLTX23MusubiCommand(root string, kind musubiCommandKind, s Settings, da
 			"--ltx_version", nonEmpty(s.LTXVersion, "2.3"),
 			"--ltx_version_check_mode", nonEmpty(s.LTXVersionCheckMode, "error"),
 			"--ltx2_mode", nonEmpty(s.LTXMode, "video"),
-		}
+		)
 		args = appendBoolArg(args, "--fp8_base", s.FP8Base)
 		args = appendBoolArg(args, "--fp8_scaled", s.FP8Scaled)
 		args = appendBoolArg(args, "--full_ft_train_text_encoder", s.FullFTTrainTextEncoder)
@@ -132,9 +132,9 @@ func buildWAN22MusubiCommand(root string, kind musubiCommandKind, s Settings, da
 		args = []string{"wan_cache_latents.py", "--dataset_config", datasetTOML, "--vae", s.VAEPath, "--i2v"}
 		args = appendFields(args, s.ExtraCacheLatentsArgs)
 	case musubiCommandTrain:
-		args = []string{"-m", "accelerate.commands.launch",
-			"--num_cpu_threads_per_process", strconv.Itoa(defaultInt(s.NumCPUThreads, 8)),
-			"--mixed_precision", nonEmpty(s.MixedPrecision, "bf16"),
+		args = []string{"-m", "accelerate.commands.launch"}
+		args = append(args, commonAccelerateArgs(s)...)
+		args = append(args,
 			"wan_train_network.py",
 			"--task", nonEmpty(s.WanTask, "i2v-A14B"),
 			"--mixed_precision", nonEmpty(s.MixedPrecision, "bf16"),
@@ -150,7 +150,7 @@ func buildWAN22MusubiCommand(root string, kind musubiCommandKind, s Settings, da
 			"--dit", s.DiTPath,
 			"--t5", s.QwenPath,
 			"--vae", s.VAEPath,
-		}
+		)
 		args = appendBoolArg(args, "--force_v2_1_time_embedding", true)
 		args = appendCommonMusubiTrainArgs(args, s)
 	default:
@@ -166,12 +166,12 @@ func buildKrea2MusubiCommand(root string, kind musubiCommandKind, s Settings, da
 		args = []string{"src/musubi_tuner/krea2_cache_text_encoder_outputs.py", "--dataset_config", datasetTOML, "--text_encoder", s.QwenPath, "--batch_size", "4"}
 		args = appendFields(args, s.ExtraCacheTextArgs)
 	case musubiCommandCacheLatents:
-		args = []string{"src/musubi_tuner/krea2_cache_latents.py", "--dataset_config", datasetTOML, "--vae", s.VAEPath, "--vae_dtype", nonEmpty(s.MixedPrecision, "bf16")}
+		args = []string{"src/musubi_tuner/krea2_cache_latents.py", "--dataset_config", datasetTOML, "--vae", s.VAEPath}
 		args = appendFields(args, s.ExtraCacheLatentsArgs)
 	case musubiCommandTrain:
-		args = []string{"-m", "accelerate.commands.launch",
-			"--num_cpu_threads_per_process", strconv.Itoa(defaultInt(s.NumCPUThreads, 8)),
-			"--mixed_precision", nonEmpty(s.MixedPrecision, "bf16"),
+		args = []string{"-m", "accelerate.commands.launch"}
+		args = append(args, commonAccelerateArgs(s)...)
+		args = append(args,
 			"src/musubi_tuner/krea2_train_network.py",
 			"--mixed_precision", nonEmpty(s.MixedPrecision, "bf16"),
 			"--optimizer_type", musubiOptimizer(s.Optimizer),
@@ -186,7 +186,7 @@ func buildKrea2MusubiCommand(root string, kind musubiCommandKind, s Settings, da
 			"--dit", s.DiTPath,
 			"--text_encoder", s.QwenPath,
 			"--vae", s.VAEPath,
-		}
+		)
 		args = appendBoolArg(args, "--fp8_base", s.FP8Base)
 		args = appendBoolArg(args, "--fp8_scaled", s.FP8Scaled)
 		if s.BlocksToSwap > 0 {
@@ -232,9 +232,6 @@ func appendCommonMusubiTrainArgs(args []string, s Settings) []string {
 	args = appendBoolArg(args, "--save_state_on_train_end", s.SaveStateOnTrainEnd)
 	args = append(args, "--max_train_epochs", strconv.Itoa(defaultInt(s.TargetEpochs, 6)))
 	args = append(args, "--metadata_title", projectNameForSettings(s))
-	if strings.TrimSpace(s.TriggerWord) != "" {
-		args = append(args, "--metadata_trigger_phrase", s.TriggerWord)
-	}
 	if strings.TrimSpace(s.MetadataAuthor) != "" {
 		args = append(args, "--metadata_author", s.MetadataAuthor)
 	}
@@ -242,6 +239,16 @@ func appendCommonMusubiTrainArgs(args []string, s Settings) []string {
 		args = append(args, "--metadata_tags", s.MetadataTags)
 	}
 	return appendFields(args, s.ExtraTrainArgs)
+}
+
+func commonAccelerateArgs(s Settings) []string {
+	return []string{
+		"--num_processes=1",
+		"--num_machines=1",
+		"--num_cpu_threads_per_process", strconv.Itoa(defaultInt(s.NumCPUThreads, 8)),
+		"--mixed_precision", nonEmpty(s.MixedPrecision, "bf16"),
+		"--dynamo_backend=no",
+	}
 }
 
 func createMusubiDatasetTOML(projectName string, s Settings, profile trainingProfile, outDir string) (string, error) {
