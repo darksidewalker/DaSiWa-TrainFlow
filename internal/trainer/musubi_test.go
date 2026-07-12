@@ -82,18 +82,47 @@ func TestBuildMusubiWAN22Command(t *testing.T) {
 
 func TestBuildMusubiKrea2Commands(t *testing.T) {
 	settings := normalizeSettings(Settings{Architecture: ArchitectureKrea2, DiTPath: "/models/krea2-raw.safetensors", QwenPath: "/models/qwen3-vl.safetensors", VAEPath: "/models/qwen-image-vae.safetensors", ProjectName: "krea_project", TriggerWord: "trigger"})
+	settings.ExtraTrainArgs = appendMusubiSamplingExtraArgs(settings.ExtraTrainArgs, "/tmp/krea_project_prompts.txt", 250)
 	cmd, err := buildMusubiCommand(t.TempDir(), musubiCommandTrain, settings, "/tmp/dataset.toml", "/tmp/out")
 	if err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(cmd.Args, " ")
-	for _, want := range []string{"--num_processes=1", "--num_machines=1", "--dynamo_backend=no", "src/musubi_tuner/krea2_train_network.py", "--dit /models/krea2-raw.safetensors", "--text_encoder /models/qwen3-vl.safetensors", "--vae /models/qwen-image-vae.safetensors", "--network_module networks.lora_krea2", "--fp8_scaled"} {
+	for _, want := range []string{"--num_processes=1", "--num_machines=1", "--dynamo_backend=no", "src/musubi_tuner/krea2_train_network.py", "--dit /models/krea2-raw.safetensors", "--text_encoder /models/qwen3-vl.safetensors", "--vae /models/qwen-image-vae.safetensors", "--network_module networks.lora_krea2", "--fp8_scaled", "--sample_every_n_steps 250", "--sample_prompts /tmp/krea_project_prompts.txt"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("Krea2 train command missing %q in %q", want, joined)
 		}
 	}
 	if strings.Contains(joined, "--metadata_trigger_phrase") {
 		t.Fatalf("Musubi train command must not pass unsupported --metadata_trigger_phrase: %q", joined)
+	}
+}
+
+func TestKrea2SamplePromptsUseRawRecommendedSteps(t *testing.T) {
+	dir := t.TempDir()
+	settings := normalizeSettings(Settings{
+		Architecture:   ArchitectureKrea2,
+		ProjectName:    "krea_project",
+		TriggerWord:    "trigger",
+		SamplePrompts:  []string{"portrait photo"},
+		NegativePrompt: "blurry",
+		Width:          1024,
+		Height:         1024,
+		SampleStepsGen: 30,
+		SampleCFG:      4,
+		SampleSeed:     42,
+	})
+	path, err := createSamplePrompts("krea_project", settings, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "--s 52") {
+		t.Fatalf("Krea2 RAW sample prompts must use 52 steps, got: %q", text)
 	}
 }
 

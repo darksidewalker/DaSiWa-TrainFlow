@@ -44,7 +44,7 @@ func createSamplePrompts(projectName string, s Settings, outDir string) (string,
 		s.Width,
 		s.Height,
 		strconv.FormatFloat(s.SampleCFG, 'f', -1, 64),
-		s.SampleStepsGen,
+		sampleGenerationSteps(s),
 		s.SampleSeed,
 	)
 
@@ -56,6 +56,16 @@ func createSamplePrompts(projectName string, s Settings, outDir string) (string,
 	content := strings.Join(lines, "\n")
 	path := filepath.Join(outDir, projectName+"_prompts.txt")
 	return path, os.WriteFile(path, []byte(content), 0644)
+}
+
+func sampleGenerationSteps(s Settings) int {
+	if s.Architecture == ArchitectureKrea2 {
+		return 52
+	}
+	if s.SampleStepsGen > 0 {
+		return s.SampleStepsGen
+	}
+	return 30
 }
 
 func createDatasetTOML(projectName string, s Settings, profile trainingProfile, baseRes, maxBucket int, outDir string) (string, error) {
@@ -154,8 +164,7 @@ func writeAnimaTrainingTOML(content *strings.Builder, projectName string, s Sett
 	content.WriteString(fmt.Sprintf("output_dir = %s\n", tomlString(filepath.ToSlash(absPath(outputDir)))))
 	content.WriteString(fmt.Sprintf("output_name = %s\n", tomlString(projectName)))
 	content.WriteString(fmt.Sprintf("save_every_n_steps = %d\n", s.SaveSteps))
-	content.WriteString(fmt.Sprintf("sample_every_n_steps = %d\n", s.SampleSteps))
-	content.WriteString(fmt.Sprintf("sample_prompts = %s\n", tomlString(filepath.ToSlash(absPath(promptPath)))))
+	writeTrainingPreviewTOML(content, s, promptPath)
 	content.WriteString("save_state = true\n")
 	content.WriteString("save_last_n_steps_state = 1\n")
 	content.WriteString("save_last_n_epochs_state = 1\n")
@@ -263,8 +272,7 @@ func writeSDXLTrainingTOML(content *strings.Builder, projectName string, s Setti
 	content.WriteString(fmt.Sprintf("output_dir = %s\n", tomlString(filepath.ToSlash(absPath(outputDir)))))
 	content.WriteString(fmt.Sprintf("output_name = %s\n", tomlString(projectName)))
 	content.WriteString(fmt.Sprintf("save_every_n_steps = %d\n", s.SaveSteps))
-	content.WriteString(fmt.Sprintf("sample_every_n_steps = %d\n", s.SampleSteps))
-	content.WriteString(fmt.Sprintf("sample_prompts = %s\n", tomlString(filepath.ToSlash(absPath(promptPath)))))
+	writeTrainingPreviewTOML(content, s, promptPath)
 	content.WriteString("save_state = true\n")
 	content.WriteString("save_last_n_steps_state = 1\n")
 	content.WriteString("save_last_n_epochs_state = 1\n")
@@ -285,6 +293,14 @@ func writeSDXLTrainingTOML(content *strings.Builder, projectName string, s Setti
 	content.WriteString("max_token_length = 225\n")
 	content.WriteString(fmt.Sprintf("seed = %d\n", s.TrainSeed))
 	writeMetadataTOML(content, projectName, s)
+}
+
+func writeTrainingPreviewTOML(content *strings.Builder, s Settings, promptPath string) {
+	if !s.TrainingPreviews {
+		return
+	}
+	content.WriteString(fmt.Sprintf("sample_every_n_steps = %d\n", s.SampleSteps))
+	content.WriteString(fmt.Sprintf("sample_prompts = %s\n", tomlString(filepath.ToSlash(absPath(promptPath)))))
 }
 
 func resolveResumePath(s Settings, outputDir string) string {

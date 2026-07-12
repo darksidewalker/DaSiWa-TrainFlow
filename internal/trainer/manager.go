@@ -66,6 +66,9 @@ func (m *Manager) LoadSettings() error {
 	if !jsonContains(data, "auto_trigger") {
 		settings.AutoTrigger = true
 	}
+	if !jsonContains(data, "training_previews") {
+		settings.TrainingPreviews = true
+	}
 	m.settings = normalizeSettings(settings)
 	return nil
 }
@@ -150,9 +153,13 @@ func (m *Manager) Start(s Settings) (StartResponse, error) {
 		return m.startTextualInversion(s, profile, projectName, projectOut, configDir, sampleDir)
 	}
 	baseRes, maxBucket := analyzeDatasetResolution(s.DatasetPath)
-	promptPath, err := createSamplePrompts(projectName, s, configDir)
-	if err != nil {
-		return StartResponse{OK: false, Message: err.Error()}, err
+	promptPath := ""
+	if s.TrainingPreviews {
+		var err error
+		promptPath, err = createSamplePrompts(projectName, s, configDir)
+		if err != nil {
+			return StartResponse{OK: false, Message: err.Error()}, err
+		}
 	}
 	datasetTOML, err := createDatasetTOML(projectName, s, profile, baseRes, maxBucket, configDir)
 	if err != nil {
@@ -442,6 +449,16 @@ func (m *Manager) runMusubiSequenced(s Settings, profile trainingProfile, projec
 		cancel()
 		return StartResponse{OK: false, Message: err.Error()}, err
 	}
+	if s.TrainingPreviews {
+		promptPath, err := createSamplePrompts(projectName, s, configDir)
+		if err != nil {
+			cancel()
+			return StartResponse{OK: false, Message: err.Error()}, err
+		}
+		s.ExtraTrainArgs = appendMusubiSamplingExtraArgs(s.ExtraTrainArgs, promptPath, s.SampleSteps)
+	} else {
+		m.appendLog("Training previews disabled; skipping sample generation.")
+	}
 	spec, err := buildMusubiCommand(m.root, musubiCommandCacheText, s, datasetTOML, projectOut)
 	if err != nil {
 		cancel()
@@ -534,6 +551,29 @@ func (m *Manager) runMusubiSequenced(s Settings, profile trainingProfile, projec
 	}()
 
 	return StartResponse{OK: true, Message: "Pipeline started.", Step: "training"}, nil
+}
+
+func appendMusubiSamplingExtraArgs(extra, promptPath string, sampleEvery int) string {
+	fields := strings.Fields(extra)
+	if sampleEvery <= 0 {
+		sampleEvery = 100
+	}
+	if !stringSliceContains(fields, "--sample_every_n_steps") {
+		fields = append(fields, "--sample_every_n_steps", strconv.Itoa(sampleEvery))
+	}
+	if strings.TrimSpace(promptPath) != "" && !stringSliceContains(fields, "--sample_prompts") {
+		fields = append(fields, "--sample_prompts", promptPath)
+	}
+	return strings.Join(fields, " ")
+}
+
+func stringSliceContains(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }
 
 // startTextualInversion launches a textual inversion (text-embedding) training.

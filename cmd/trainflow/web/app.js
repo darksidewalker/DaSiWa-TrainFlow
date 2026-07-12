@@ -18,6 +18,7 @@ const fields = [
   "training_steps",
   "save_steps",
   "sample_steps",
+  "training_previews",
   "sample_prompt_count",
   "neg_prompt",
   "width",
@@ -251,6 +252,7 @@ function collectSettings() {
   data.architecture = normalizeArchitecture(data.architecture);
   data.train_seed = 42;
   data.sample_steps_gen = 30;
+  if (data.architecture === "krea2") data.sample_steps_gen = 52;
   return data;
 }
 

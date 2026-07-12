@@ -34,6 +34,7 @@ type Settings struct {
 	TrainingSteps              int      `json:"training_steps"`
 	SaveSteps                  int      `json:"save_steps"`
 	SampleSteps                int      `json:"sample_steps"`
+	TrainingPreviews           bool     `json:"training_previews"`
 	PositivePrompt             string   `json:"pos_prompt"`
 	SamplePrompts              []string `json:"sample_prompts"`
 	NegativePrompt             string   `json:"neg_prompt"`
@@ -139,6 +140,7 @@ func DefaultSettings(root string) Settings {
 		TrainingSteps:              1100,
 		SaveSteps:                  100,
 		SampleSteps:                100,
+		TrainingPreviews:           true,
 		PositivePrompt:             "",
 		NegativePrompt:             "worst quality, low quality, score_1, score_2, score_3, artist name",
 		Width:                      1024,

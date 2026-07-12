@@ -225,6 +225,51 @@ func TestCreateTrainingTOML_alpha_written(t *testing.T) {
 	}
 }
 
+func TestCreateTrainingTOML_trainingPreviewsToggle(t *testing.T) {
+	tmp := t.TempDir()
+	s := normalizeSettings(Settings{
+		Architecture:     ArchitectureAnima,
+		ProjectName:      "preview-test",
+		OutputPath:       tmp,
+		DatasetPath:      tmp,
+		NetworkRank:      48,
+		NetworkAlpha:     32,
+		LearningRate:     "1e-4",
+		TrainingSteps:    1000,
+		SaveSteps:        100,
+		SampleSteps:      100,
+		TrainingPreviews: true,
+	})
+	path, err := createTrainingTOML(s.ProjectName, s, profileFor(s), s.OutputPath, "/tmp/prompts.txt", tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toml := string(data)
+	for _, want := range []string{"sample_every_n_steps = 100", "sample_prompts = \"/tmp/prompts.txt\""} {
+		if !strings.Contains(toml, want) {
+			t.Fatalf("enabled previews TOML missing %q:\n%s", want, toml)
+		}
+	}
+
+	s.TrainingPreviews = false
+	path, err = createTrainingTOML(s.ProjectName, s, profileFor(s), s.OutputPath, "/tmp/prompts.txt", tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toml = string(data)
+	if strings.Contains(toml, "sample_every_n_steps") || strings.Contains(toml, "sample_prompts") {
+		t.Fatalf("disabled previews TOML must not contain sampling keys:\n%s", toml)
+	}
+}
+
 // --- cross-architecture rank/alpha transition tests ---
 
 func TestNormalizeSettings_video_from_anima(t *testing.T) {
@@ -619,9 +664,9 @@ func TestTILearningRateScaling(t *testing.T) {
 		{8, "0.01"},
 		{16, "0.005"},
 		{32, "0.0025"},
-		{1, "0.08"},       // 0.08 (0.01 * 8/1, clamped to 0.1 max)
-		{100, "0.001"},    // 0.0008 clamped to 0.001 min
-		{0, "0.005"},      // defaults to 16 vectors
+		{1, "0.08"},    // 0.08 (0.01 * 8/1, clamped to 0.1 max)
+		{100, "0.001"}, // 0.0008 clamped to 0.001 min
+		{0, "0.005"},   // defaults to 16 vectors
 	}
 	for _, tt := range tests {
 		got := recommendedTILearningRate(tt.vectors)
