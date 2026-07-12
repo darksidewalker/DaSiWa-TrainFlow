@@ -66,6 +66,29 @@ func TestBuildMusubiCommandsUseVendoredSourceAndSharedPython(t *testing.T) {
 	}
 }
 
+func TestBuildMusubiLTX23NativeFP8CommandSkipsDynamicFP8(t *testing.T) {
+	settings := normalizeSettings(Settings{
+		Architecture:   ArchitectureLTX23,
+		CheckpointPath: "/models/ltx2_fp8.safetensors",
+		QwenPath:       "/models/gemma.safetensors",
+		ProjectName:    "ltx_fp8",
+		FP8Base:        true,
+		FP8Scaled:      true,
+		MixedPrecision: "bf16",
+	})
+	cmd, err := buildMusubiCommand(t.TempDir(), musubiCommandTrain, settings, "/tmp/dataset.toml", "/tmp/out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(cmd.Args, " ")
+	if strings.Contains(joined, "--fp8_scaled") {
+		t.Fatalf("native FP8 LTX checkpoint must not receive --fp8_scaled: %q", joined)
+	}
+	if !strings.Contains(joined, "--fp8_base") {
+		t.Fatalf("native FP8 LTX checkpoint must preserve --fp8_base: %q", joined)
+	}
+}
+
 func TestBuildMusubiWAN22Command(t *testing.T) {
 	settings := normalizeSettings(Settings{Architecture: ArchitectureWAN22, DiTPath: "/models/wan.safetensors", QwenPath: "/models/t5.pth", VAEPath: "/models/vae.safetensors", ProjectName: "wan_project"})
 	cmd, err := buildMusubiCommand(t.TempDir(), musubiCommandTrain, settings, "/tmp/dataset.toml", "/tmp/out")

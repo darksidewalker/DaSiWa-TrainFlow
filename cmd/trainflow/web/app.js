@@ -215,6 +215,8 @@ const checkpointLabel = document.getElementById("checkpointLabel");
 const qwenLabel = document.getElementById("qwenLabel");
 const qwenPathInput = document.getElementById("qwen_path");
 const vaeLabel = document.getElementById("vaeLabel");
+const ditPrecisionHint = document.getElementById("ditPrecisionHint");
+const checkpointPrecisionHint = document.getElementById("checkpointPrecisionHint");
 
 let galleryImages = [];
 let overlayIndex = 0;
@@ -427,6 +429,8 @@ function setArchitecture(value, save = true) {
   if (videoDatasetPrep) videoDatasetPrep.classList.toggle("hidden", !videoMode);
   if (datasetPrepTitle) datasetPrepTitle.textContent = videoMode ? "Video Normalize / Musubi Cache" : "Dataset Prep";
   syncVideoNormalizerProxiesFromSettings();
+  if (ditPrecisionHint) ditPrecisionHint.textContent = "";
+  if (checkpointPrecisionHint) checkpointPrecisionHint.textContent = "";
   if (architecture === "sdxl") {
     checkpointLabel.textContent = "SDXL Checkpoint";
     qwenLabel.textContent = "Qwen3";
@@ -434,15 +438,18 @@ function setArchitecture(value, save = true) {
     applyImageDefaults("sdxl");
   } else if (architecture === "ltx23") {
     checkpointLabel.textContent = "LTX 2.3 Checkpoint";
+    if (checkpointPrecisionHint) checkpointPrecisionHint.textContent = "(BF16 or native FP8)";
     qwenLabel.textContent = "Gemma Text Encoder";
     applyVideoDefaults("ltx23", save);
   } else if (architecture === "wan22") {
     ditLabel.textContent = "Wan DiT Checkpoint";
+    if (ditPrecisionHint) ditPrecisionHint.textContent = "(BF16 or native FP8)";
     qwenLabel.textContent = "T5 Text Encoder";
     vaeLabel.textContent = "Wan VAE";
     applyVideoDefaults("wan22", save);
   } else if (architecture === "krea2") {
     ditLabel.textContent = "Krea 2 RAW DiT";
+    if (ditPrecisionHint) ditPrecisionHint.textContent = "(BF16; FP8 is created dynamically)";
     qwenLabel.textContent = "Qwen3-VL Text Encoder";
     vaeLabel.textContent = "Qwen-Image VAE";
     applyKrea2Defaults(save);

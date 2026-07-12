@@ -111,7 +111,7 @@ func buildLTX23MusubiCommand(root string, kind musubiCommandKind, s Settings, da
 			"--ltx2_mode", nonEmpty(s.LTXMode, "video"),
 		)
 		args = appendBoolArg(args, "--fp8_base", s.FP8Base)
-		args = appendBoolArg(args, "--fp8_scaled", s.FP8Scaled)
+		args = appendBoolArg(args, "--fp8_scaled", s.FP8Scaled && !isNativeFP8Model(s.CheckpointPath))
 		args = appendBoolArg(args, "--full_ft_train_text_encoder", s.FullFTTrainTextEncoder)
 		args = appendBoolArg(args, "--full_ft_text_encoder_fallback", s.FullFTTextEncoderFallback)
 		args = append(args, "--blocks_to_swap", strconv.Itoa(defaultInt(s.BlocksToSwap, 14)))
@@ -121,6 +121,10 @@ func buildLTX23MusubiCommand(root string, kind musubiCommandKind, s Settings, da
 		return musubiCommand{}, fmt.Errorf("unknown Musubi command kind: %s", kind)
 	}
 	return newMusubiCommand(root, args), nil
+}
+
+func isNativeFP8Model(path string) bool {
+	return strings.Contains(strings.ToLower(filepath.Base(path)), "fp8")
 }
 
 func buildWAN22MusubiCommand(root string, kind musubiCommandKind, s Settings, datasetTOML, outputDir string) (musubiCommand, error) {

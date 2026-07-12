@@ -75,14 +75,14 @@
         <section class="panel model-panel">
           <div class="panel-title">Model Paths</div>
           <label class="profile-field profile-anima profile-wan22 profile-krea2">
-            <span id="ditLabel">DiT</span>
+            <span><span id="ditLabel">DiT</span> <small id="ditPrecisionHint" class="model-precision-hint"></small></span>
             <div class="path-row">
               <input id="dit_path" autocomplete="off">
               <button class="browse-button" data-target="dit_path" data-mode="model" title="Choose DiT model">...</button>
             </div>
           </label>
           <label class="profile-field profile-sdxl profile-ltx23">
-            <span id="checkpointLabel">SDXL Checkpoint</span>
+            <span><span id="checkpointLabel">SDXL Checkpoint</span> <small id="checkpointPrecisionHint" class="model-precision-hint"></small></span>
             <div class="path-row">
               <input id="checkpoint_path" autocomplete="off" placeholder="/path/to/illustrious_or_pony.safetensors">
               <button class="browse-button" data-target="checkpoint_path" data-mode="model" title="Choose checkpoint">...</button>
