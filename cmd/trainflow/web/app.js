@@ -443,6 +443,9 @@ function setArchitecture(value, save = true) {
     qwenLabel.textContent = "Qwen3-VL Text Encoder";
     vaeLabel.textContent = "Qwen-Image VAE";
     applyKrea2Defaults(save);
+    if (qwenPathInput) {
+      qwenPathInput.placeholder = "qwen3vl_4b_bf16.safetensors - download from https://huggingface.co/Comfy-Org/Qwen3-VL/tree/main/text_encoders";
+    }
   } else {
     ditLabel.textContent = "DiT";
     qwenLabel.textContent = "Qwen3";
