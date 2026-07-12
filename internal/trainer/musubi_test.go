@@ -110,17 +110,20 @@ func TestBuildMusubiKrea2Commands(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	settings := normalizeSettings(Settings{Architecture: ArchitectureKrea2, DiTPath: "/models/krea2-raw.safetensors", QwenPath: "/models/qwen3-vl.safetensors", VAEPath: "/models/qwen-image-vae.safetensors", ProjectName: "krea_project", TriggerWord: "trigger", DatasetPath: dataset, TrainingSteps: 21, TrainBatchSize: 1, GradientAccumulationSteps: 1})
-	settings.ExtraTrainArgs = appendMusubiSamplingExtraArgs(settings.ExtraTrainArgs, "/tmp/krea_project_prompts.txt", 250)
+	settings := normalizeSettings(Settings{Architecture: ArchitectureKrea2, DiTPath: "/models/krea2-raw.safetensors", QwenPath: "/models/qwen3-vl.safetensors", VAEPath: "/models/qwen-image-vae.safetensors", ProjectName: "krea_project", TriggerWord: "trigger", DatasetPath: dataset, TrainingSteps: 21, SaveSteps: 10, SampleSteps: 10, TrainBatchSize: 1, GradientAccumulationSteps: 1})
+	settings.ExtraTrainArgs = appendMusubiSamplingExtraArgs(settings.ExtraTrainArgs, "/tmp/krea_project_prompts.txt", settings.SampleSteps)
 	cmd, err := buildMusubiCommand(t.TempDir(), musubiCommandTrain, settings, "/tmp/dataset.toml", "/tmp/out")
 	if err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(cmd.Args, " ")
-	for _, want := range []string{"--num_processes=1", "--num_machines=1", "--dynamo_backend=no", "src/musubi_tuner/krea2_train_network.py", "--dit /models/krea2-raw.safetensors", "--text_encoder /models/qwen3-vl.safetensors", "--vae /models/qwen-image-vae.safetensors", "--network_module networks.lora_krea2", "--network_dim 16", "--network_alpha 16", "--save_precision bf16", "--optimizer_type bitsandbytes.optim.AdamW8bit", "--learning_rate 7e-5", "--lr_scheduler constant", "--lr_warmup_steps 0", "--max_train_epochs 5", "--fp8_scaled", "--sample_every_n_steps 250", "--sample_prompts /tmp/krea_project_prompts.txt"} {
+	for _, want := range []string{"--num_processes=1", "--num_machines=1", "--dynamo_backend=no", "src/musubi_tuner/krea2_train_network.py", "--dit /models/krea2-raw.safetensors", "--text_encoder /models/qwen3-vl.safetensors", "--vae /models/qwen-image-vae.safetensors", "--network_module networks.lora_krea2", "--network_dim 16", "--network_alpha 16", "--save_precision bf16", "--optimizer_type bitsandbytes.optim.AdamW8bit", "--learning_rate 7e-5", "--lr_scheduler constant", "--lr_warmup_steps 0", "--max_train_epochs 5", "--save_every_n_steps 10", "--fp8_scaled", "--sample_every_n_steps 10", "--sample_prompts /tmp/krea_project_prompts.txt"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("Krea2 train command missing %q in %q", want, joined)
 		}
+	}
+	if strings.Contains(joined, "--save_every_n_epochs") {
+		t.Fatalf("Krea2 save interval must use the configured step cadence, not an epoch cadence: %q", joined)
 	}
 	if strings.Contains(joined, "--optimizer_args") {
 		t.Fatalf("AdamW8bit Krea2 command should not receive Prodigy optimizer args: %q", joined)

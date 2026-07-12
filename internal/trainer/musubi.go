@@ -233,7 +233,11 @@ func appendCommonMusubiTrainArgs(args []string, s Settings) []string {
 		"--max_data_loader_n_workers", "4",
 	)
 	args = appendBoolArg(args, "--persistent_data_loader_workers", s.PersistentWorkers)
-	args = append(args, "--save_every_n_epochs", "1")
+	if s.Architecture == ArchitectureKrea2 {
+		args = append(args, "--save_every_n_steps", strconv.Itoa(defaultInt(s.SaveSteps, 100)))
+	} else {
+		args = append(args, "--save_every_n_epochs", "1")
+	}
 	args = appendBoolArg(args, "--save_state", true)
 	args = appendBoolArg(args, "--save_state_on_train_end", s.SaveStateOnTrainEnd)
 	args = append(args, "--max_train_epochs", strconv.Itoa(musubiMaxTrainEpochs(s)))
