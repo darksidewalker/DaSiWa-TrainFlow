@@ -212,6 +212,7 @@ let gpuVramMB = 0; // set from hardware stats
 const ditLabel = document.getElementById("ditLabel");
 const checkpointLabel = document.getElementById("checkpointLabel");
 const qwenLabel = document.getElementById("qwenLabel");
+const qwenPathInput = document.getElementById("qwen_path");
 const vaeLabel = document.getElementById("vaeLabel");
 
 let galleryImages = [];
