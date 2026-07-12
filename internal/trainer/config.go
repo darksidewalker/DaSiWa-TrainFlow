@@ -43,7 +43,7 @@ func createSamplePrompts(projectName string, s Settings, outDir string) (string,
 		neg,
 		s.Width,
 		s.Height,
-		strconv.FormatFloat(s.SampleCFG, 'f', -1, 64),
+		strconv.FormatFloat(sampleCFG(s), 'f', -1, 64),
 		sampleGenerationSteps(s),
 		s.SampleSeed,
 	)
@@ -66,6 +66,16 @@ func sampleGenerationSteps(s Settings) int {
 		return s.SampleStepsGen
 	}
 	return 30
+}
+
+func sampleCFG(s Settings) float64 {
+	if s.Architecture != ArchitectureKrea2 {
+		return s.SampleCFG
+	}
+	if strings.Contains(strings.ToLower(filepath.Base(s.DiTPath)), "turbo") {
+		return 1.0
+	}
+	return 3.5
 }
 
 func createDatasetTOML(projectName string, s Settings, profile trainingProfile, baseRes, maxBucket int, outDir string) (string, error) {

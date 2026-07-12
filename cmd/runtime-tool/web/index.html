@@ -29,6 +29,19 @@
       <button id="verifyButton">Verify Runtime</button>
       <button id="quitButton" class="danger">Quit</button>
     </section>
+    <section id="modelPicker" class="model-picker" hidden>
+      <div class="model-picker-head">
+        <div>
+          <h2>Model downloads</h2>
+          <p>Wähle die Modell-Dateien nach Architektur und Kategorie aus.</p>
+        </div>
+        <div class="model-picker-actions">
+          <button id="selectMissingModels" type="button" class="secondary">Select missing</button>
+          <button id="startModelsButton" type="button">Download selected</button>
+        </div>
+      </div>
+      <div id="modelGroups" class="model-groups"></div>
+    </section>
     <label class="check-row">
       <input id="keepBackup" type="checkbox">
       <span>Keep backup before update</span>

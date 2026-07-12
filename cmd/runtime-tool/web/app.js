@@ -9,6 +9,10 @@ const installTorchCompile = document.getElementById("installTorchCompile");
 const torchBackend = document.getElementById("torchBackend");
 const torchWarning = document.getElementById("torchWarning");
 const torchPanel = torchBackend.closest(".torch-panel");
+const modelPicker = document.getElementById("modelPicker");
+const modelGroups = document.getElementById("modelGroups");
+const startModelsButton = document.getElementById("startModelsButton");
+const selectMissingModels = document.getElementById("selectMissingModels");
 const buttons = {
   install: document.getElementById("installButton"),
   update: document.getElementById("updateButton"),
@@ -28,6 +32,7 @@ async function api(path, options = {}) {
 }
 
 async function run(action) {
+  const modelKeys = action === "models" ? selectedModelKeys() : [];
   const resp = await api("/api/run", {
     method: "POST",
     body: JSON.stringify({
@@ -35,10 +40,68 @@ async function run(action) {
       keepBackup: keepBackup.checked,
       installFlashAttention: installFlashAttention.checked,
       installTorchCompile: installTorchCompile.checked,
-      torchBackend: torchBackend.value
+      torchBackend: torchBackend.value,
+      modelKeys
     })
   });
   statusText.textContent = resp.message;
+}
+
+function modelSelectionKey(file) {
+  return `${file.arch}:${file.key}:${(file.path || "").split(/[\\/]/).pop()}`;
+}
+
+function selectedModelKeys() {
+  return Array.from(modelGroups.querySelectorAll("input[data-model-key]:checked")).map((input) => input.dataset.modelKey);
+}
+
+function renderModelCatalog(catalog) {
+  if (!catalog || !modelGroups) return;
+  modelGroups.innerHTML = "";
+  for (const group of catalog) {
+    const section = document.createElement("section");
+    section.className = "model-group";
+    const title = document.createElement("h3");
+    title.textContent = group.label || group.architecture;
+    section.appendChild(title);
+
+    if (!group.files || group.files.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "muted-small";
+      empty.textContent = "Noch keine Standard-Downloads hinterlegt.";
+      section.appendChild(empty);
+      modelGroups.appendChild(section);
+      continue;
+    }
+
+    for (const file of group.files) {
+      const label = document.createElement("label");
+      label.className = "model-row";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.dataset.modelKey = modelSelectionKey(file);
+      input.checked = !file.ok;
+      const meta = document.createElement("span");
+      meta.className = "model-meta";
+      const name = document.createElement("strong");
+      name.textContent = `${file.category || "Model"}: ${file.name}`;
+      const path = document.createElement("span");
+      path.textContent = file.ok ? `OK: ${file.found || file.path}` : `${file.size || ""} → ${file.path}`;
+      meta.appendChild(name);
+      meta.appendChild(path);
+      label.appendChild(input);
+      label.appendChild(meta);
+      section.appendChild(label);
+    }
+    modelGroups.appendChild(section);
+  }
+}
+
+function selectMissingModelRows() {
+  for (const input of modelGroups.querySelectorAll("input[data-model-key]")) {
+    const rowText = input.closest(".model-row")?.textContent || "";
+    input.checked = !rowText.includes("OK:");
+  }
 }
 
 async function quitApp() {
@@ -138,6 +201,7 @@ function renderStatus(data) {
   }
   statusText.textContent = data.running ? "Running" : "Ready";
   renderModelStatus(data.models);
+  renderModelCatalog(data.catalog);
 }
 
 function renderModelStatus(status) {
@@ -174,7 +238,11 @@ async function runWithConfirm(action) {
 
 buttons.install.addEventListener("click", () => runWithConfirm("install"));
 buttons.update.addEventListener("click", () => runWithConfirm("update"));
-buttons.models.addEventListener("click", () => run("models"));
+buttons.models.addEventListener("click", () => {
+  modelPicker.hidden = !modelPicker.hidden;
+});
+startModelsButton.addEventListener("click", () => run("models"));
+selectMissingModels.addEventListener("click", selectMissingModelRows);
 buttons.prepModels.addEventListener("click", () => run("prep-models"));
 buttons.verify.addEventListener("click", () => run("verify"));
 buttons.quit.addEventListener("click", () => quitApp().catch((err) => (statusText.textContent = err.message)));

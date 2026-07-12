@@ -150,8 +150,35 @@ func TestKrea2SamplePromptsUseRawRecommendedSteps(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	if !strings.Contains(text, "--s 52") {
-		t.Fatalf("Krea2 RAW sample prompts must use 52 steps, got: %q", text)
+	for _, want := range []string{"--s 52", "--l 3.5"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("Krea2 RAW sample prompts must contain %q, got: %q", want, text)
+		}
+	}
+}
+
+func TestKrea2TurboSamplePromptsUseCFGOne(t *testing.T) {
+	dir := t.TempDir()
+	settings := normalizeSettings(Settings{
+		Architecture:  ArchitectureKrea2,
+		ProjectName:   "krea_turbo",
+		DiTPath:       "/models/krea2_turbo_bf16.safetensors",
+		SamplePrompts: []string{"portrait photo"},
+		Width:         1024,
+		Height:        1024,
+		SampleCFG:     3.5,
+		SampleSeed:    42,
+	})
+	path, err := createSamplePrompts("krea_turbo", settings, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "--l 1") {
+		t.Fatalf("Krea2 Turbo sample prompts must use CFG 1, got: %q", data)
 	}
 }
 

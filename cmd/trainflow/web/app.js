@@ -484,6 +484,7 @@ function applyKrea2Defaults(save) {
   els.discrete_flow_shift.value = els.discrete_flow_shift.value || "2.5";
   els.width.value = els.width.value || 1024;
   els.height.value = els.height.value || 1024;
+  els.sample_cfg.value = 3.5;
   els.mixed_precision.value = els.mixed_precision.value || "bf16";
   els.num_cpu_threads.value = els.num_cpu_threads.value || 8;
   els.blocks_to_swap.value = els.blocks_to_swap.value || 14;

@@ -55,7 +55,10 @@ func main() {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		writeJSON(w, modelops.CheckWithOverrides(runState.root, modelOverrides(runState.root)))
+		writeJSON(w, map[string]any{
+			"status":  modelops.CheckWithOverrides(runState.root, modelOverrides(runState.root)),
+			"catalog": modelops.Catalog(runState.root),
+		})
 	})
 	mux.HandleFunc("/api/run", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -63,18 +66,19 @@ func main() {
 			return
 		}
 		var body struct {
-			Action                string `json:"action"`
-			KeepBackup            bool   `json:"keepBackup"`
-			InstallFlashAttention bool   `json:"installFlashAttention"`
-			InstallTorchCompile   bool   `json:"installTorchCompile"`
-			TorchBackend          string `json:"torchBackend"`
+			Action                string   `json:"action"`
+			KeepBackup            bool     `json:"keepBackup"`
+			InstallFlashAttention bool     `json:"installFlashAttention"`
+			InstallTorchCompile   bool     `json:"installTorchCompile"`
+			TorchBackend          string   `json:"torchBackend"`
+			ModelKeys             []string `json:"modelKeys"`
 		}
 		defer r.Body.Close()
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		ok, msg := runState.start(body.Action, body.KeepBackup, runtimeops.TorchInstallOptions{
+		ok, msg := runState.start(body.Action, body.KeepBackup, body.ModelKeys, runtimeops.TorchInstallOptions{
 			Backend:                 body.TorchBackend,
 			InstallFlashAttention:   body.InstallFlashAttention,
 			InstallTorchCompileDeps: body.InstallTorchCompile,
@@ -107,7 +111,7 @@ func main() {
 	}
 }
 
-func (r *runner) start(action string, keepBackup bool, torchOpts runtimeops.TorchInstallOptions) (bool, string) {
+func (r *runner) start(action string, keepBackup bool, modelKeys []string, torchOpts runtimeops.TorchInstallOptions) (bool, string) {
 	r.mu.Lock()
 	if r.running {
 		r.mu.Unlock()
@@ -133,7 +137,11 @@ func (r *runner) start(action string, keepBackup bool, torchOpts runtimeops.Torc
 		case "verify":
 			err = runtimeops.Verify(r.root, r.append)
 		case "models":
-			err = modelops.DownloadRequired(r.root, r.append)
+			if len(modelKeys) > 0 {
+				err = modelops.DownloadSelected(r.root, modelKeys, r.append)
+			} else {
+				err = modelops.DownloadRequired(r.root, r.append)
+			}
 		case "prep-models":
 			err = modelops.DownloadOptional(r.root, r.append)
 		default:
@@ -166,6 +174,7 @@ func (r *runner) status() map[string]any {
 		"logs":    r.logs,
 		"os":      runtime.GOOS,
 		"models":  modelops.CheckWithOverrides(r.root, modelOverrides(r.root)),
+		"catalog": modelops.Catalog(r.root),
 		"gpu":     detectGPU(),
 	}
 }

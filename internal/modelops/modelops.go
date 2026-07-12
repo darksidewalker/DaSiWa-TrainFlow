@@ -18,6 +18,8 @@ type Logger func(string)
 type ModelFile struct {
 	Name     string `json:"name"`
 	Key      string `json:"key"`
+	Arch     string `json:"arch,omitempty"`
+	Category string `json:"category,omitempty"`
 	Path     string `json:"path"`
 	Found    string `json:"found"`
 	URL      string `json:"url"`
@@ -25,6 +27,12 @@ type ModelFile struct {
 	Hash     string `json:"hash,omitempty"`
 	Optional bool   `json:"optional"`
 	OK       bool   `json:"ok"`
+}
+
+type ModelGroup struct {
+	Architecture string      `json:"architecture"`
+	Label        string      `json:"label"`
+	Files        []ModelFile `json:"files"`
 }
 
 type Status struct {
@@ -39,25 +47,78 @@ type Status struct {
 func RequiredFiles(root string) []ModelFile {
 	return []ModelFile{
 		{
-			Name: "Anima Base v1.0 DiT",
-			Key:  "dit_path",
-			Path: filepath.Join(root, "models", "anima", "dit", "anima-base-v1.0.safetensors"),
-			URL:  "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/diffusion_models/anima-base-v1.0.safetensors",
-			Size: "18.2 GB",
+			Name:     "Anima Base v1.0 DiT",
+			Key:      "dit_path",
+			Arch:     "anima",
+			Category: "Model / DiT",
+			Path:     filepath.Join(root, "models", "anima", "dit", "anima-base-v1.0.safetensors"),
+			URL:      "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/diffusion_models/anima-base-v1.0.safetensors",
+			Size:     "18.2 GB",
 		},
 		{
-			Name: "Qwen3 text encoder",
-			Key:  "qwen_path",
-			Path: filepath.Join(root, "models", "anima", "text_encoder", "qwen_3_06b_base.safetensors"),
-			URL:  "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/text_encoders/qwen_3_06b_base.safetensors",
+			Name:     "Qwen3 text encoder",
+			Key:      "qwen_path",
+			Arch:     "anima",
+			Category: "Text Encoder",
+			Path:     filepath.Join(root, "models", "anima", "text_encoder", "qwen_3_06b_base.safetensors"),
+			URL:      "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/text_encoders/qwen_3_06b_base.safetensors",
 		},
 		{
-			Name: "Qwen Image VAE",
-			Key:  "vae_path",
-			Path: filepath.Join(root, "models", "anima", "vae", "qwen_image_vae.safetensors"),
-			URL:  "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/vae/qwen_image_vae.safetensors",
-			Size: "254 MB",
+			Name:     "Qwen Image VAE",
+			Key:      "vae_path",
+			Arch:     "anima",
+			Category: "VAE",
+			Path:     filepath.Join(root, "models", "anima", "vae", "qwen_image_vae.safetensors"),
+			URL:      "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/vae/qwen_image_vae.safetensors",
+			Size:     "254 MB",
 		},
+	}
+}
+
+func Krea2Files(root string) []ModelFile {
+	return []ModelFile{
+		{
+			Name:     "Qwen3-VL 4B BF16 text encoder",
+			Key:      "qwen_path",
+			Arch:     "krea2",
+			Category: "Text Encoder",
+			Path:     filepath.Join(root, "models", "krea2", "text_encoder", "qwen3vl_4b_bf16.safetensors"),
+			URL:      "https://huggingface.co/Comfy-Org/Qwen3-VL/resolve/main/text_encoders/qwen3vl_4b_bf16.safetensors",
+			Size:     "BF16",
+		},
+		{
+			Name:     "Krea 2 RAW BF16 diffusion model",
+			Key:      "dit_path",
+			Arch:     "krea2",
+			Category: "Model / DiT",
+			Path:     filepath.Join(root, "models", "krea2", "diffusion_models", "krea2_raw_bf16.safetensors"),
+			URL:      "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/diffusion_models/krea2_raw_bf16.safetensors",
+			Size:     "BF16",
+		},
+		{
+			Name:     "Qwen Image VAE",
+			Key:      "vae_path",
+			Arch:     "krea2",
+			Category: "VAE",
+			Path:     filepath.Join(root, "models", "krea2", "vae", "qwen_image_vae.safetensors"),
+			URL:      "https://huggingface.co/Comfy-Org/Krea-2/resolve/main/vae/qwen_image_vae.safetensors",
+			Size:     "254 MB",
+		},
+	}
+}
+
+func RequiredModelFiles(root string) []ModelFile {
+	files := RequiredFiles(root)
+	files = append(files, Krea2Files(root)...)
+	return files
+}
+
+func Catalog(root string) []ModelGroup {
+	return []ModelGroup{
+		{Architecture: "anima", Label: "ANIMA", Files: withStatus(root, RequiredFiles(root), nil)},
+		{Architecture: "krea2", Label: "Krea 2", Files: withStatus(root, Krea2Files(root), nil)},
+		{Architecture: "wan22", Label: "WAN 2.2", Files: nil},
+		{Architecture: "ltx23", Label: "LTX 2.3", Files: nil},
 	}
 }
 
@@ -100,7 +161,7 @@ func OptionalFiles(root string) []ModelFile {
 }
 
 func AllFiles(root string) []ModelFile {
-	files := RequiredFiles(root)
+	files := RequiredModelFiles(root)
 	files = append(files, OptionalFiles(root)...)
 	return files
 }
@@ -111,23 +172,14 @@ func Check(root string) Status {
 
 func CheckWithOverrides(root string, overrides map[string]string) Status {
 	files := AllFiles(root)
+	files = withStatus(root, files, overrides)
 	missing := 0
 	optionalMissing := 0
-	for i := range files {
-		files[i].OK = process.FileExistsNonEmpty(files[i].Path)
-		if files[i].OK {
-			files[i].Found = files[i].Path
-		}
-		if !files[i].Optional && files[i].Key != "" && overrides != nil {
-			if override := overrides[files[i].Key]; override != "" && process.FileExistsNonEmpty(override) {
-				files[i].OK = true
-				files[i].Found = override
-			}
-		}
-		if files[i].OK {
+	for _, file := range files {
+		if file.OK {
 			continue
 		}
-		if files[i].Optional {
+		if file.Optional {
 			optionalMissing++
 		} else {
 			missing++
@@ -150,15 +202,67 @@ func CheckWithOverrides(root string, overrides map[string]string) Status {
 	}
 }
 
-func DownloadRequired(root string, log Logger) error {
-	for _, file := range RequiredFiles(root) {
-		if process.FileExistsNonEmpty(file.Path) {
-			log("Already present: " + file.Path)
-			continue
+func withStatus(root string, files []ModelFile, overrides map[string]string) []ModelFile {
+	_ = root
+	for i := range files {
+		files[i].OK = process.FileExistsNonEmpty(files[i].Path)
+		if files[i].OK {
+			files[i].Found = files[i].Path
 		}
-		if err := download(log, file.URL, file.Path, file.Hash); err != nil {
+		if !files[i].Optional && files[i].Key != "" && overrides != nil {
+			if override := overrides[files[i].Key]; override != "" && process.FileExistsNonEmpty(override) {
+				files[i].OK = true
+				files[i].Found = override
+			}
+		}
+	}
+	return files
+}
+
+func DownloadRequired(root string, log Logger) error {
+	for _, file := range RequiredModelFiles(root) {
+		if err := downloadFileIfMissing(file, log); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func DownloadSelected(root string, keys []string, log Logger) error {
+	selected := map[string]bool{}
+	for _, key := range keys {
+		selected[key] = true
+	}
+	if len(selected) == 0 {
+		return fmt.Errorf("no models selected")
+	}
+	matched := 0
+	for _, file := range RequiredModelFiles(root) {
+		if !selected[selectionKey(file)] {
+			continue
+		}
+		matched++
+		if err := downloadFileIfMissing(file, log); err != nil {
+			return err
+		}
+	}
+	if matched == 0 {
+		return fmt.Errorf("no known models selected")
+	}
+	return nil
+}
+
+func selectionKey(file ModelFile) string {
+	return file.Arch + ":" + file.Key + ":" + filepath.Base(file.Path)
+}
+
+func downloadFileIfMissing(file ModelFile, log Logger) error {
+	if process.FileExistsNonEmpty(file.Path) {
+		log("Already present: " + file.Path)
+		return nil
+	}
+	if err := download(log, file.URL, file.Path, file.Hash); err != nil {
+		return err
 	}
 	return nil
 }
