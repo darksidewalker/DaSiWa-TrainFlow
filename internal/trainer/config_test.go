@@ -151,6 +151,7 @@ func TestProfileDefaults_rankAlpha(t *testing.T) {
 		{ArchitectureSDXL, 64, 32},
 		{ArchitectureLTX23, 64, 64},
 		{ArchitectureWAN22, 64, 64},
+		{ArchitectureKrea2, 16, 16},
 	}
 	for _, tt := range tests {
 		profile := profileFor(Settings{Architecture: tt.arch})
@@ -175,6 +176,7 @@ func TestApplyStableDefaults_rankAlpha_preserved(t *testing.T) {
 		{ArchitectureSDXL, 64, 32},
 		{ArchitectureLTX23, 64, 64},
 		{ArchitectureWAN22, 64, 64},
+		{ArchitectureKrea2, 16, 16},
 	}
 	for _, tt := range tests {
 		s := Settings{

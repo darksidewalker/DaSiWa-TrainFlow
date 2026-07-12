@@ -2,6 +2,7 @@ package trainer
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -174,10 +175,9 @@ func buildKrea2MusubiCommand(root string, kind musubiCommandKind, s Settings, da
 		args = append(args,
 			"src/musubi_tuner/krea2_train_network.py",
 			"--mixed_precision", nonEmpty(s.MixedPrecision, "bf16"),
+			"--save_precision", "bf16",
 			"--optimizer_type", musubiOptimizer(s.Optimizer),
 			"--learning_rate", nonEmpty(s.LearningRate, "1.0"),
-			"--optimizer_args", "decouple=True", "weight_decay=0.01", "d_coef=2.0", "use_bias_correction=True", "safeguard_warmup=True",
-			"--lr_scheduler", "constant",
 			"--timestep_sampling", nonEmpty(s.TimestepSampling, "krea2_shift"),
 			"--discrete_flow_shift", nonEmpty(s.DiscreteFlowShift, "2.5"),
 			"--dataset_config", datasetTOML,
@@ -187,6 +187,8 @@ func buildKrea2MusubiCommand(root string, kind musubiCommandKind, s Settings, da
 			"--text_encoder", s.QwenPath,
 			"--vae", s.VAEPath,
 		)
+		args = append(args, musubiOptimizerArgs(s)...)
+		args = append(args, musubiSchedulerArgs(s)...)
 		args = appendBoolArg(args, "--fp8_base", s.FP8Base)
 		args = appendBoolArg(args, "--fp8_scaled", s.FP8Scaled)
 		if s.BlocksToSwap > 0 {
@@ -230,7 +232,7 @@ func appendCommonMusubiTrainArgs(args []string, s Settings) []string {
 	args = append(args, "--save_every_n_epochs", "1")
 	args = appendBoolArg(args, "--save_state", true)
 	args = appendBoolArg(args, "--save_state_on_train_end", s.SaveStateOnTrainEnd)
-	args = append(args, "--max_train_epochs", strconv.Itoa(defaultInt(s.TargetEpochs, 6)))
+	args = append(args, "--max_train_epochs", strconv.Itoa(musubiMaxTrainEpochs(s)))
 	args = append(args, "--metadata_title", projectNameForSettings(s))
 	if strings.TrimSpace(s.MetadataAuthor) != "" {
 		args = append(args, "--metadata_author", s.MetadataAuthor)
@@ -239,6 +241,48 @@ func appendCommonMusubiTrainArgs(args []string, s Settings) []string {
 		args = append(args, "--metadata_tags", s.MetadataTags)
 	}
 	return appendFields(args, s.ExtraTrainArgs)
+}
+
+func musubiOptimizerArgs(s Settings) []string {
+	if strings.EqualFold(strings.TrimSpace(s.Optimizer), "Prodigy") || strings.TrimSpace(s.Optimizer) == "" {
+		return []string{"--optimizer_args", "decouple=True", "weight_decay=0.01", "d_coef=2.0", "use_bias_correction=True", "safeguard_warmup=True"}
+	}
+	return nil
+}
+
+func musubiSchedulerArgs(s Settings) []string {
+	if strings.EqualFold(strings.TrimSpace(s.Optimizer), "Prodigy") {
+		return []string{"--lr_scheduler", "constant_with_warmup", "--lr_warmup_steps", "100"}
+	}
+	return []string{"--lr_scheduler", "constant", "--lr_warmup_steps", "0"}
+}
+
+func musubiMaxTrainEpochs(s Settings) int {
+	targetSteps := s.TrainingSteps
+	if targetSteps <= 0 {
+		return defaultInt(s.TargetEpochs, 6)
+	}
+	profile := profileFor(s)
+	items := 0
+	if profile.Video {
+		items = countDatasetVideos(s.DatasetPath)
+	} else {
+		items = countDatasetImages(s.DatasetPath)
+	}
+	if items <= 0 {
+		return defaultInt(s.TargetEpochs, 6)
+	}
+	batch := maxInt(s.TrainBatchSize, 1)
+	grad := maxInt(s.GradientAccumulationSteps, 1)
+	repeats := 1
+	if profile.Video {
+		repeats = maxInt(s.VideoNumRepeats, 1)
+	}
+	stepsPerEpoch := int(math.Ceil(float64(items*repeats) / float64(batch*grad)))
+	if stepsPerEpoch <= 0 {
+		stepsPerEpoch = 1
+	}
+	return maxInt(1, int(math.Ceil(float64(targetSteps)/float64(stepsPerEpoch))))
 }
 
 func commonAccelerateArgs(s Settings) []string {
@@ -334,10 +378,14 @@ func defaultInt(value, fallback int) int {
 }
 
 func musubiOptimizer(value string) string {
-	if strings.EqualFold(strings.TrimSpace(value), "Prodigy") || strings.TrimSpace(value) == "" {
+	trimmed := strings.TrimSpace(value)
+	if strings.EqualFold(trimmed, "Prodigy") || trimmed == "" {
 		return "prodigyopt.Prodigy"
 	}
-	return strings.TrimSpace(value)
+	if strings.EqualFold(trimmed, "AdamW8bit") {
+		return "bitsandbytes.optim.AdamW8bit"
+	}
+	return trimmed
 }
 
 func appendBoolArg(args []string, name string, enabled bool) []string {

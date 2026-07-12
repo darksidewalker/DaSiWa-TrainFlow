@@ -104,6 +104,25 @@ func defaultsForProfile(profile trainingProfile) profileDefaults {
 			MinSteps:           1200,
 			MaxSteps:           3600,
 		}
+	case ArchitectureKrea2:
+		return profileDefaults{
+			NetworkRank:        16,
+			NetworkAlpha:       16,
+			LearningRate:       "7e-5",
+			UNetLR:             "7e-5",
+			TextEncoderLR1:     "1e-5",
+			TextEncoderLR2:     "1e-5",
+			Optimizer:          "AdamW8bit",
+			BaseSteps:          1500,
+			TargetRepeats:      38,
+			VideoTargetRepeats: 0,
+			VideoTargetEpochs:  0,
+			VideoTargetSteps:   0,
+			VideoMinSteps:      0,
+			VideoMaxSteps:      0,
+			MinSteps:           1000,
+			MaxSteps:           2500,
+		}
 	default:
 		return profileDefaults{
 			NetworkRank:        48,

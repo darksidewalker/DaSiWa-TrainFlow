@@ -81,20 +81,49 @@ func TestBuildMusubiWAN22Command(t *testing.T) {
 }
 
 func TestBuildMusubiKrea2Commands(t *testing.T) {
-	settings := normalizeSettings(Settings{Architecture: ArchitectureKrea2, DiTPath: "/models/krea2-raw.safetensors", QwenPath: "/models/qwen3-vl.safetensors", VAEPath: "/models/qwen-image-vae.safetensors", ProjectName: "krea_project", TriggerWord: "trigger"})
+	dataset := t.TempDir()
+	for _, name := range []string{"1.png", "2.png", "3.png", "4.png", "5.png"} {
+		if err := os.WriteFile(filepath.Join(dataset, name), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	settings := normalizeSettings(Settings{Architecture: ArchitectureKrea2, DiTPath: "/models/krea2-raw.safetensors", QwenPath: "/models/qwen3-vl.safetensors", VAEPath: "/models/qwen-image-vae.safetensors", ProjectName: "krea_project", TriggerWord: "trigger", DatasetPath: dataset, TrainingSteps: 21, TrainBatchSize: 1, GradientAccumulationSteps: 1})
 	settings.ExtraTrainArgs = appendMusubiSamplingExtraArgs(settings.ExtraTrainArgs, "/tmp/krea_project_prompts.txt", 250)
 	cmd, err := buildMusubiCommand(t.TempDir(), musubiCommandTrain, settings, "/tmp/dataset.toml", "/tmp/out")
 	if err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(cmd.Args, " ")
-	for _, want := range []string{"--num_processes=1", "--num_machines=1", "--dynamo_backend=no", "src/musubi_tuner/krea2_train_network.py", "--dit /models/krea2-raw.safetensors", "--text_encoder /models/qwen3-vl.safetensors", "--vae /models/qwen-image-vae.safetensors", "--network_module networks.lora_krea2", "--fp8_scaled", "--sample_every_n_steps 250", "--sample_prompts /tmp/krea_project_prompts.txt"} {
+	for _, want := range []string{"--num_processes=1", "--num_machines=1", "--dynamo_backend=no", "src/musubi_tuner/krea2_train_network.py", "--dit /models/krea2-raw.safetensors", "--text_encoder /models/qwen3-vl.safetensors", "--vae /models/qwen-image-vae.safetensors", "--network_module networks.lora_krea2", "--network_dim 16", "--network_alpha 16", "--save_precision bf16", "--optimizer_type bitsandbytes.optim.AdamW8bit", "--learning_rate 7e-5", "--lr_scheduler constant", "--lr_warmup_steps 0", "--max_train_epochs 5", "--fp8_scaled", "--sample_every_n_steps 250", "--sample_prompts /tmp/krea_project_prompts.txt"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("Krea2 train command missing %q in %q", want, joined)
 		}
 	}
+	if strings.Contains(joined, "--optimizer_args") {
+		t.Fatalf("AdamW8bit Krea2 command should not receive Prodigy optimizer args: %q", joined)
+	}
 	if strings.Contains(joined, "--metadata_trigger_phrase") {
 		t.Fatalf("Musubi train command must not pass unsupported --metadata_trigger_phrase: %q", joined)
+	}
+}
+
+func TestBuildMusubiKrea2ProdigyCommandKeepsWarmupAndEpochConversion(t *testing.T) {
+	dataset := t.TempDir()
+	for _, name := range []string{"1.png", "2.png", "3.png", "4.png", "5.png"} {
+		if err := os.WriteFile(filepath.Join(dataset, name), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	settings := normalizeSettings(Settings{Architecture: ArchitectureKrea2, Optimizer: "Prodigy", DiTPath: "/models/krea2-raw.safetensors", QwenPath: "/models/qwen3-vl.safetensors", VAEPath: "/models/qwen-image-vae.safetensors", ProjectName: "krea_project", DatasetPath: dataset, TrainingSteps: 15, TrainBatchSize: 1, GradientAccumulationSteps: 1})
+	cmd, err := buildMusubiCommand(t.TempDir(), musubiCommandTrain, settings, "/tmp/dataset.toml", "/tmp/out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(cmd.Args, " ")
+	for _, want := range []string{"--optimizer_type prodigyopt.Prodigy", "--learning_rate 1.0", "--optimizer_args decouple=True weight_decay=0.01 d_coef=2.0 use_bias_correction=True safeguard_warmup=True", "--lr_scheduler constant_with_warmup", "--lr_warmup_steps 100", "--max_train_epochs 3", "--save_precision bf16"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("Prodigy Krea2 command missing %q in %q", want, joined)
+		}
 	}
 }
 

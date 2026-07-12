@@ -476,9 +476,9 @@ function applyImageDefaults(architecture) {
 
 function applyKrea2Defaults(save) {
   if (!save) return;
-  if (!els.optimizer.value) els.optimizer.value = "Prodigy";
-  els.network_rank.value = 32;
-  els.network_alpha.value = 32;
+  if (!els.optimizer.value || els.optimizer.value === "Prodigy") els.optimizer.value = "AdamW8bit";
+  els.network_rank.value = 16;
+  els.network_alpha.value = 16;
   els.network_module.value = "networks.lora_krea2";
   els.timestep_sampling.value = "krea2_shift";
   els.discrete_flow_shift.value = els.discrete_flow_shift.value || "2.5";
@@ -549,6 +549,8 @@ function applyVideoDefaults(architecture, save) {
 function normalizeOptimizerLearningRate() {
   if (els.optimizer.value === "Prodigy") {
     els.learning_rate.value = "1.0";
+  } else if (normalizeArchitecture(els.architecture.value) === "krea2" && els.optimizer.value === "AdamW8bit" && (!els.learning_rate.value || els.learning_rate.value === "1.0" || els.learning_rate.value === "1e-4")) {
+    els.learning_rate.value = "7e-5";
   } else if (!els.learning_rate.value || els.learning_rate.value === "1.0") {
     els.learning_rate.value = "1e-4";
   }

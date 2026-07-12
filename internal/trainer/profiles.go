@@ -166,7 +166,11 @@ func normalizeSettings(s Settings) Settings {
 		s.VideoParallelWorkers = 1
 	}
 	if strings.TrimSpace(s.Optimizer) == "" {
-		s.Optimizer = "Prodigy"
+		if s.Architecture == ArchitectureKrea2 {
+			s.Optimizer = "AdamW8bit"
+		} else {
+			s.Optimizer = "Prodigy"
+		}
 	}
 	if strings.TrimSpace(s.TorchCompileMode) == "" {
 		s.TorchCompileMode = "default"
@@ -232,11 +236,11 @@ func normalizeSettings(s Settings) Settings {
 		}
 	}
 	if s.Architecture == ArchitectureKrea2 {
-		if s.NetworkRank <= 0 || s.NetworkRank == 48 || s.NetworkRank == 64 {
-			s.NetworkRank = 32
+		if s.NetworkRank <= 0 || s.NetworkRank == 32 || s.NetworkRank == 48 || s.NetworkRank == 64 {
+			s.NetworkRank = 16
 		}
-		if s.NetworkAlpha <= 0 || s.NetworkAlpha == 64 {
-			s.NetworkAlpha = 32
+		if s.NetworkAlpha <= 0 || s.NetworkAlpha == 32 || s.NetworkAlpha == 64 {
+			s.NetworkAlpha = 16
 		}
 		if strings.TrimSpace(s.NetworkModule) == "" || strings.HasPrefix(s.NetworkModule, "networks.lora") {
 			s.NetworkModule = "networks.lora_krea2"
@@ -271,8 +275,8 @@ func normalizeSettings(s Settings) Settings {
 		s.NetworkAlpha = 32
 	}
 	if strings.TrimSpace(s.LearningRate) == "" {
-		if s.Architecture == ArchitectureSDXL {
-			s.LearningRate = "1e-4"
+		if s.Architecture == ArchitectureKrea2 && strings.EqualFold(strings.TrimSpace(s.Optimizer), "AdamW8bit") {
+			s.LearningRate = "7e-5"
 		} else {
 			s.LearningRate = "1e-4"
 		}
@@ -280,7 +284,11 @@ func normalizeSettings(s Settings) Settings {
 	if strings.EqualFold(strings.TrimSpace(s.Optimizer), "Prodigy") {
 		s.LearningRate = "1.0"
 	} else if strings.TrimSpace(s.LearningRate) == "1.0" {
-		s.LearningRate = "1e-4"
+		if s.Architecture == ArchitectureKrea2 && strings.EqualFold(strings.TrimSpace(s.Optimizer), "AdamW8bit") {
+			s.LearningRate = "7e-5"
+		} else {
+			s.LearningRate = "1e-4"
+		}
 	}
 	if strings.TrimSpace(s.UNetLR) == "" {
 		s.UNetLR = "1e-4"
