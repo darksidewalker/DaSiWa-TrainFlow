@@ -227,6 +227,12 @@ func gitOutput(root string, args ...string) (string, error) {
 }
 
 func buildAppBinaries(root string, log Logger) error {
+	// If Go is not available, skip rebuilding app binaries gracefully so the
+	// rest of the runtime update (Python + pip deps) can still proceed.
+	if _, err := exec.LookPath("go"); err != nil {
+		log("Go compiler not found on PATH; skipping app binary rebuild. Python/runtime dependencies will still be updated.")
+		return nil
+	}
 	script := filepath.Join(root, "build.sh")
 	if runtime.GOOS == "windows" {
 		script = filepath.Join(root, "build.ps1")

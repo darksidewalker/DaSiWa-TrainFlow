@@ -3,6 +3,13 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Check if Go is available; if not, skip binary builds but allow other tasks.
+if ! command -v go &> /dev/null; then
+    echo "WARNING: Go compiler not found on PATH. Skipping binary builds."
+    echo "         Python/runtime dependencies can still be updated separately."
+    exit 0
+fi
+
 mkdir -p dist
 
 echo "[1/4] Building Windows app starter..."

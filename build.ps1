@@ -1,6 +1,13 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
+# Check if Go is available; if not, skip binary builds but allow other tasks.
+if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
+    Write-Host "WARNING: Go compiler not found on PATH. Skipping binary builds."
+    Write-Host "         Python/runtime dependencies can still be updated separately."
+    exit 0
+}
+
 New-Item -ItemType Directory -Force -Path dist | Out-Null
 
 Write-Host "[1/4] Building Windows app starter..."
