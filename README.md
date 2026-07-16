@@ -8,7 +8,7 @@
 [![GitHub Forks](https://img.shields.io/github/forks/darksidewalker/DaSiWa-TrainFlow?style=flat)](https://github.com/darksidewalker/DaSiWa-TrainFlow/network/members)
 [![GitHub Issues](https://img.shields.io/github/issues/darksidewalker/DaSiWa-TrainFlow?style=flat)](https://github.com/darksidewalker/DaSiWa-TrainFlow/issues)
 
-> Portable Go wrapper around the `sd-scripts` and Musubi Python training stacks — train LoRAs for Anima, SDXL/Pony/Illustrious, LTX 2.3/Wan 2.2 video, and Krea 2 image models from a single embedded UI on Linux and Windows.
+> Portable Go wrapper around the `sd-scripts` and Musubi Python training stacks — train LoRAs and Textual Inversions for Anima, SDXL/Pony/Illustrious, LTX 2.3/Wan 2.2 video, and Krea 2 image models from a single embedded UI on Linux and Windows.
 
 ![TrainFlow preview](assets/DaSiWa-TrainFlow.webp)
 
@@ -42,110 +42,161 @@ Expand-Archive TrainFlow.zip -Force; cd DaSiWa-TrainFlow-main
 .\TrainFlow_Runtime_Tool.exe
 ```
 
-The runtime tool opens a local installer UI at `http://127.0.0.1:7870`. Click **Verify Runtime** first if you downloaded a bundled build, then **Update Runtime** or **Install Requirements** as needed.
-
-Once the runtime is ready, launch the trainer:
-
-| Platform | Command |
-|----------|---------|
-| Linux    | `./TrainFlow` |
-| Windows  | `.\TrainFlow.exe` |
-
-The UI opens at `http://127.0.0.1:7860` (or open it manually if your browser doesn't launch).
+The runtime tool opens at `http://127.0.0.1:7870`. Click **Verify Runtime**, then **Install Requirements**. Once ready, launch the trainer (`./TrainFlow` or `.\TrainFlow.exe`) — the UI opens at `http://127.0.0.1:7860`.
 
 ---
 
-## Training Workflow
+## How To Use
 
-1. Run the **Runtime Tool** and install/update dependencies.
-2. Launch **TrainFlow** and choose a training profile: **Anima**, **SDXL / Pony / Illustrious**, **LTX 2.3 / Wan 2.2**, or **Krea 2**.
-3. Use the **Browse** buttons to select model files and dataset folders.
-4. For video training (LTX/WAN), configure the normalizer (resolution, FPS, duration, etc.) — TrainFlow auto-generates the Musubi dataset TOML and caches text/latents when parameters change. Krea 2 uses the Musubi image pipeline with image-directory TOML and text/latent caching.
-5. Set trigger word, rank, optimizer, steps, and preview settings — or click **Auto Calc** for a profile-aware starting point based on your dataset size.
-6. Click **Start**.
-7. Click **Quit** in the top bar when finished.
+1. **Set up the runtime** — run the Runtime Tool, verify it, install requirements
+2. **Pick a profile** — choose your model family in the main UI
+3. **Point to your data** — select model files and dataset folders using the Browse buttons
+4. **Configure training** — set trigger word, rank, optimizer, steps — or click **Auto Calc** for smart defaults based on your dataset size and GPU VRAM
+5. **Start training** — watch the live log, monitor hardware, browse preview samples
+6. **Finish** — click Quit when done; your outputs are in the project folder
+
+---
+
+## Support Matrix
+
+|                        | Linux | Windows |
+|------------------------|:-----:|:-------:|
+| CUDA (NVIDIA GPU)      |  &#x2705;  |  &#x2705;  |
+| ROCm (AMD GPU, Linux)  |  &#x2705;  |  &#x1F7E5;  |
+| AMD GPU monitoring     |  &#x2705;  |  &#x2705;  |
+| Portable Python runtime|  &#x2705;  |  &#x2705;  |
+| uv / pip installs      |  &#x2705;  |  &#x2705;  |
+| Hardware overlay       |  &#x2705;  |  &#x2705;  |
+
+| Hardware Monitor        | NVIDIA (CUDA) | AMD (Linux sysfs) | AMD (Windows WMI) |
+|-------------------------|:-------------:|:-----------------:|:-----------------:|
+| GPU utilization         |    &#x2705;    |      &#x2705;      |    &#x1F7E5;      |
+| VRAM used / total       |    &#x2705;    |      &#x2705;      |    &#x2705;      |
+| Temperature             |    &#x2705;    |      &#x2705;      |    &#x1F7E5;      |
+| Power draw / limit      |    &#x2705;    |      &#x2705;      |    &#x1F7E5;      |
+| CPU usage               |    &#x2705;    |      &#x2705;      |    &#x2705;      |
+| CPU temperature         |    &#x2705;    |      &#x2705;      |    &#x2705;      |
+| RAM usage               |    &#x2705;    |      &#x2705;      |    &#x2705;      |
+
+---
+
+## Feature Matrix
+
+| Feature                          | Anima | SDXL / Pony / Illustrious | LTX 2.3 Video | Wan 2.2 Video | Krea 2 Image |
+|----------------------------------|:-----:|:-------------------------:|:-------------:|:-------------:|:------------:|
+| LoRA training                    |  &#x2705;  |           &#x2705;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
+| Textual Inversion                |  &#x2705;  |           &#x2705;           |    &#x1F7E5;    |    &#x1F7E5;    |   &#x1F7E5;   |
+| Auto Calc (profile-aware)        |  &#x2705;  |           &#x2705;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
+| Training previews (enabled by default) | &#x2705;  |           &#x2705;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
+| Dynamic multi-prompt sampling    |  &#x2705;  |           &#x2705;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
+| Resume from state                |  &#x2705;  |           &#x2705;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
+| Prodigy optimizer                |  &#x2705;  |           &#x2705;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
+| AdamW / AdamW8bit                |  &#x2705;  |           &#x2705;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
+| Flash Attention                  |  &#x2705;  |           &#x1F7E5;           |    &#x1F7E5;    |    &#x1F7E5;    |   &#x1F7E5;   |
+| torch.compile                    |  &#x2705;  |           &#x1F7E5;           |    &#x1F7E5;    |    &#x1F7E5;    |   &#x1F7E5;   |
+| FP8 base / scaled                |  &#x1F7E5;  |           &#x1F7E5;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
+| Native FP8 checkpoint detection  |  &#x1F7E5;  |           &#x1F7E5;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
+| Block swap + pinned memory       |  &#x1F7E5;  |           &#x1F7E5;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
+| VRAM-based batch sizing          |  &#x2705;  |           &#x2705;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
+| Metadata (author + tags)         |  &#x2705;  |           &#x2705;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
+| Text/latent caching              |  &#x1F7E5;  |           &#x1F7E5;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
+| Video normalization              |  &#x1F7E5;  |           &#x1F7E5;           |    &#x2705;    |    &#x2705;    |   &#x1F7E5;   |
+| Managed model download           |  &#x2705;  |           &#x1F7E5;           |    &#x1F7E5;    |    &#x1F7E5;    |   &#x2705;   |
+
+&#x2705; Supported — &#x1F7E5; Not applicable or not supported
 
 ---
 
 ## Training Profiles
 
-| Profile | Model Path | Network | Bucket Step | Notes |
-|---------|-----------|---------|-------------|-------|
-| **Anima** | DiT + Qwen3 + VAE | `networks.lora_anima` | 64px | DiT/Qwen3 text encoder, Anima metadata |
-| **SDXL / Pony / Illustrious** | checkpoint (+ optional VAE) | `networks.lora` | 32px | UNet/text-encoder LR fields, SDPA by default |
-| **LTX 2.3** | LTX checkpoint + Gemma encoder | Musubi pipeline | 16px | Auto TOML, video normalization, sequenced pipeline |
-| **Wan 2.2** | DiT + T5 + VAE | `networks.lora_wan` | 16px | Musubi video pipeline |
-| **Krea 2** | RAW DiT + Qwen3-VL + Qwen-Image VAE | `networks.lora_krea2` | 32px | Musubi image pipeline, Krea2 text/latent caches |
+| Profile | Model Files | Network Module | Bucket Step | Pipeline |
+|---------|-------------|----------------|-------------|----------|
+| **Anima** | DiT + Qwen3 + VAE | `networks.lora_anima` | 64px | sd-scripts |
+| **SDXL / Pony / Illustrious** | checkpoint (+ optional VAE) | `networks.lora` | 32px | sd-scripts |
+| **LTX 2.3** | checkpoint + Gemma encoder | `networks.lora_ltx2` | 16px | Musubi video |
+| **Wan 2.2** | DiT + T5 + VAE | `networks.lora_wan` | 16px | Musubi video |
+| **Krea 2** | RAW DiT + Qwen3-VL + Qwen-Image VAE | `networks.lora_krea2` | 32px | Musubi image |
 
-**Auto Calc** reads the selected profile and dataset image count, then updates rank, learning rates, batch, gradient accumulation, training steps, save interval, and sample interval. It preserves the selected optimizer (Prodigy stays on `lr=1.0` constant; AdamW/AdamW8bit stay on `1e-4` cosine).
+**Auto Calc** reads your profile and dataset count, then picks rank, learning rates, batch size, gradient accumulation, steps, and save/sample intervals — all tuned to your available VRAM. It preserves your chosen optimizer (Prodigy stays at `lr=1.0` constant; AdamW/AdamW8bit stay at `1e-4` cosine).
 
 ---
 
-## Features
+## Features At A Glance
 
 ### Embedded Training GUI
-- Single portable Go binary with embedded HTML/CSS/JS — no separate web build step
-- Colored profile switcher for Anima, SDXL/Pony/Illustrious, LTX 2.3, Wan 2.2, and Krea 2
-- Clickable local path browser for datasets, model files, and resume-state folders
-- Autosaved settings in `training/settings.json` with a manual **Save** button
-- Optimizer-aware defaults for Prodigy, AdamW8bit, and AdamW
-- Training controls: rank, learning rates, batch size, steps, gradient accumulation, save/sample interval
-- SDXL-specific UNet/text-encoder learning-rate fields and **UNet only** toggle
-- Optional Anima Flash Attention and `torch.compile` (per-block DiT compilation)
+Single portable binary, no separate web build step. Everything runs from one download:
+- Colored profile switcher for all five model families
+- Local file browser for datasets, models, and resume paths
+- Settings autosaved to `training/settings.json`
+- Optimizer-aware defaults (Prodigy, AdamW8bit, AdamW)
+- Full training controls: rank, alpha, learning rates, batch, grad accum, steps, intervals
+- SDXL-specific UNet/text-encoder LR fields and UNet-only toggle
+- Optional Flash Attention and torch.compile (Anima)
+- Multi-prompt sample generation with color-coded prompts
+- Training preview toggle (on by default, configurable per session)
 - Resume panel with automatic latest-state discovery
-- Sample prompt editor (positive/negative, width, height, CFG, seed)
-- Live training log streamed from the running process
-- Preview gallery with image overlay for browsing outputs
-- **Output** button to open the current project output folder
+- Live training log streamed in real time
+- Preview gallery with image overlay
+- Output button to open the project output folder
 
-### Dataset Prep GUI
-- WD EVA02 ONNX caption/tagging
-- LTX/WAN video normalization controls (resolution, FPS, duration, codec, quality, workers, etc.)
-- Automatic Musubi dataset TOML generation and cache rebuild triggers for video and image Musubi profiles
+### Dataset Preparation
+- WD EVA02 ONNX tagging/captioning
+- Combined Tag + Resize workflow with configurable thresholds
 - Resize-copy helper (`training/prepared/<project>`)
-- Combined **Tag + Resize** workflow with configurable thresholds
+- Video normalization pipeline: resolution, FPS, duration, codec, quality, parallel workers, speed control, skip frames
+- Automatic Musubi dataset TOML generation with text/latent cache rebuild triggers
 
-### Runtime & Model Tooling
-- Companion `TrainFlow_Runtime_Tool` at `http://127.0.0.1:7870`
-- **Verify Runtime**, **Update Runtime**, **Install Requirements**
-- **Download Models** for Anima base files; **Download Prep** for tagger/U2Net assets
-- Status pills in the main UI with quick-launch buttons
-- Platform-specific portable Python (`python_embeded/windows` or `python_embeded/linux`)
-- uv-first dependency installation with pip fallback
-- PyTorch backend selector: CUDA 13.0 by default, experimental ROCm 6.4, or existing user-managed PyTorch
-- GPU auto-detection (NVIDIA via `nvidia-smi`, AMD via `lspci`/sysfs/PowerShell) with vendor badge in the header
-- Vendor-colored backend selector panel (green for NVIDIA/CUDA, red for AMD/ROCm) with mismatch warnings
+### Runtime & Model Management
+- Companion Runtime Tool at `http://127.0.0.1:7870`
+- Verify, update, and install Python runtime dependencies (uv-first with pip fallback)
+- Download Anima base models and Krea 2 runtime models directly from the UI
+- Download prep assets (WD tagger, U2Net)
+- PyTorch backend selector: CUDA 12.4 default, experimental ROCm 6.4, or existing user-managed install
+- GPU auto-detection with vendor badge in the header
+- Vendor-colored backend panel (green NVIDIA/CUDA, orange AMD/ROCm) with mismatch warnings
+- Platform-specific portable Python (no system Python required)
 
-> **ROCm / custom PyTorch warning:** CUDA 13.0 remains the fully supported default. The ROCm and existing-PyTorch runtime modes are advanced/experimental and are intended for users who already know their PyTorch build works with their hardware. When ROCm or existing PyTorch is selected, TrainFlow disables CUDA-only optional installers such as Flash Attention and Anima `torch.compile`/Triton deps. Note that AMD GPU monitoring on Linux works via kernel sysfs and does not require ROCm.
-
-### Hardware Monitoring
-- Compact overlay inside the sampler panel
-- CPU usage, RAM usage, CPU temperature (when available)
-- NVIDIA GPU utilization, memory, temperature, and active task labels (via `nvidia-smi`)
-- AMD GPU monitoring on Linux via `amdgpu` sysfs (utilization, VRAM, temperature, power, frequency — kernel driver only, no ROCm needed)
-- AMD GPU detection on Windows via WMI (name and VRAM total)
+### Hardware Monitoring Overlay
+Compact real-time display inside the sampler panel:
+- CPU usage, RAM usage, CPU temperature
+- GPU utilization, VRAM, temperature, power draw/limit, active task labels
+- NVIDIA via nvidia-smi; AMD via kernel sysfs (Linux) or WMI (Windows)
 
 ---
 
 ## Advanced
 
 <details>
-<summary><strong>Resume Training</strong> — state resume, latest-state discovery</summary>
+<summary><strong>Resume Training</strong></summary>
 
-The UI includes a **Resume** panel:
+Three options in the Resume panel:
+- **Resume training** enables state resume
+- **Use latest saved state** auto-finds the newest state directory
+- **Resume State Path** lets you pick a specific folder manually
 
-- **Resume training** enables `sd-scripts` state resume
-- **Use latest saved state** auto-discovers the newest `*-state` directory in the project output folder
-- **Resume State Path** lets you pick a specific state folder manually
-
-All new runs write `save_state = true`, `save_last_n_steps_state = 1`, and `save_last_n_epochs_state = 1` so state is always available.
+All runs write state by default (`save_last_n_steps_state = 1`, `save_last_n_epochs_state = 1`).
 
 </details>
 
 <details>
-<summary><strong>Anima LoRA Metadata</strong> — inspect and repair safetensors headers</summary>
+<summary><strong>Textual Inversion</strong></summary>
 
-New LoRA files include Anima-specific safetensors metadata (`ss_base_model_version = "anima-base-v1.0"`). To inspect or repair existing LoRAs:
+Switch Training Mode to **Textual Inversion** to train text embeddings instead of LoRAs. Configure:
+- Placeholder token (default `*test*`)
+- Number of vectors (default 16)
+- Initializer word
+- Learning rate (auto-scaled by vector count)
+- Batch size (VRAM-aware)
+- Random cropping toggle
+
+Supported for Anima and SDXL/Pony/Illustrious profiles.
+
+</details>
+
+<details>
+<summary><strong>Anima LoRA Metadata</strong></summary>
+
+New LoRA files include Anima safetensors metadata. Inspect or repair existing LoRAs:
 
 ```bash
 python training/sd-scripts/tools/anima_lora_metadata.py path/to/lora.safetensors
@@ -155,9 +206,9 @@ python training/sd-scripts/tools/anima_lora_metadata.py path/to/lora.safetensors
 </details>
 
 <details>
-<summary><strong>Required Models</strong> — Anima base files, prep models, manual install</summary>
+<summary><strong>Required Models</strong></summary>
 
-Use **Download Models** in `TrainFlow_Runtime_Tool` to fetch Anima base files:
+Use the Runtime Tool (**Download Models**) to fetch base files:
 
 ```
 models/anima/dit/anima-base-v1.0.safetensors
@@ -165,7 +216,7 @@ models/anima/text_encoder/qwen_3_06b_base.safetensors
 models/anima/vae/qwen_image_vae.safetensors
 ```
 
-Use **Download Prep** for optional dataset-prep models:
+Use **Download Prep** for dataset-prep models:
 
 ```
 models/wd-eva02-large-tagger-v3/    (WD EVA02 tagger)
@@ -173,7 +224,6 @@ models/u2net/u2net.onnx             (U2Net background removal)
 ```
 
 Or install manually:
-
 ```bash
 git clone https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3 models/wd-eva02-large-tagger-v3
 curl -L -o models/u2net/u2net.onnx https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx
@@ -182,31 +232,39 @@ curl -L -o models/u2net/u2net.onnx https://github.com/danielgatis/rembg/releases
 </details>
 
 <details>
-<summary><strong>Adding Training Types</strong> — Musubi/script integration hints</summary>
+<summary><strong>torch.compile (Anima)</strong></summary>
 
-Future training types should be added as small profile-specific adapters instead of one-off UI/backend branches. See `docs/training-type-integration.md` for the full checklist.
-
-Short version:
-- add an architecture constant and `profileFor()` case in `internal/trainer/profiles.go`
-- add profile defaults and model-path validation
-- add a Musubi command builder in `internal/trainer/musubi.go` for cache text, cache latents, and train
-- add/update TOML generation for image vs video datasets
-- add the colored selector button and defaults in `cmd/trainflow/web/`
-- add focused tests in `internal/trainer/musubi_test.go`
-
-Musubi source note: upstream `https://github.com/kohya-ss/musubi-tuner` is the source for current Musubi/Krea2 scripts, but TrainFlow's LTX 2.3 integration depends on LTX2 entrypoints that may live in an LTX-capable Musubi fork/local source. When updating Musubi, preserve or refresh the LTX 2.3 files from that fork instead of blindly deleting them from the vendored tree.
+Per-block DiT compilation for faster Anima training. Configurable mode, backend (inductor), dynamic shape handling, and cache size. Requires Triton — automatically disabled when ROCm or custom PyTorch backends are selected. On Windows with dynamic shapes, requires MSVC Build Tools environment.
 
 </details>
 
 <details>
-<summary><strong>System Requirements</strong> — GPU, Python, host dependencies</summary>
+<summary><strong>ROCm and Custom PyTorch Note</strong></summary>
+
+CUDA remains the fully supported default. ROCm 6.4 and existing-PyTorch modes are experimental — they disable CUDA-only features (Flash Attention, torch.compile/Triton) automatically. AMD GPU monitoring on Linux works via kernel sysfs and does not require ROCm installed.
+
+</details>
+
+<details>
+<summary><strong>Adding New Training Types</strong></summary>
+
+Future types should use small profile adapters rather than UI/backend branches. See `docs/training-type-integration.md` for the full checklist.
+
+Short version: add an architecture constant and profile case, Musubi command builder, TOML generation, colored UI button, and focused tests.
+
+Note: upstream Musubi source is `https://github.com/kohya-ss/musubi-tuner`. The LTX 2.3 integration depends on LTX2 entrypoints that may live in an LTX-capable fork — preserve those files when updating vendored Musubi.
+
+</details>
+
+<details>
+<summary><strong>System Requirements</strong></summary>
 
 | Requirement | Notes |
 |-------------|-------|
-| **GPU** | NVIDIA (CUDA) recommended; AMD (ROCm 6.4) supported on Linux |
-| **Python 3.12** | Recommended on Linux for the embedded runtime |
-| **nvidia-smi** | Needed for NVIDIA GPU monitoring overlay |
-| **amdgpu kernel driver** | Needed for AMD GPU monitoring on Linux (sysfs) |
+| **GPU** | NVIDIA (CUDA) recommended; AMD (ROCm 6.4) on Linux |
+| **Python 3.12** | Recommended for the embedded runtime |
+| **nvidia-smi** | Needed for NVIDIA GPU monitoring |
+| **amdgpu kernel driver** | Needed for AMD GPU monitoring on Linux |
 | **Go 1.22+** | Only when building from source |
 
 </details>
@@ -216,7 +274,7 @@ Musubi source note: upstream `https://github.com/kohya-ss/musubi-tuner` is the s
 ## Development
 
 <details>
-<summary><strong>Build From Source</strong> — compile Go binaries, cross-compile</summary>
+<summary><strong>Build From Source</strong></summary>
 
 Only needed when modifying Go code or rebuilding release artifacts.
 
@@ -226,7 +284,7 @@ go build -trimpath -ldflags="-s -w" -o TrainFlow ./cmd/trainflow
 go build -trimpath -ldflags="-s -w" -o TrainFlow_Runtime_Tool ./cmd/runtime-tool
 ```
 
-**Cross-compile (Windows PowerShell):**
+**Cross-compile (Windows):**
 ```powershell
 .\build.ps1
 ```
@@ -246,15 +304,15 @@ dist/trainflow-runtime-tool-windows-amd64.exe
 </details>
 
 <details>
-<summary><strong>Shipping & Distribution</strong> — release packaging, python_embeded</summary>
+<summary><strong>Shipping & Distribution</strong></summary>
 
-Do not commit `python_embeded/` to Git — the runtime contains thousands of files plus large ML wheels.
+Do not commit `python_embeded/` to Git.
 
-**For normal installs**, ship only the root binaries and let the runtime tool create the platform runtime on the user's machine:
+**Normal distribution** — ship only the root binaries; the runtime tool creates the platform runtime on the user's machine:
 - Windows: `TrainFlow.exe` + `TrainFlow_Runtime_Tool.exe`
 - Linux: `TrainFlow` + `TrainFlow_Runtime_Tool`
 
-**For fully offline packages**, create a release ZIP/7z outside Git containing the binaries plus `python_embeded/<platform>`, and upload as a GitHub Release asset.
+**Fully offline packages** — create a ZIP/7z containing binaries plus `python_embeded/<platform>` and upload as a GitHub Release asset.
 
 </details>
 
