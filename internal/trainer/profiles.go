@@ -202,6 +202,10 @@ func normalizeSettings(s Settings) Settings {
 		s.SDPA = true
 		s.GradientCheckpointing = true
 		s.UsePinnedMemoryBlockSwap = true
+		s.BlockSwapH2DOnly = true
+		if s.BlockSwapRingSize <= 0 {
+			s.BlockSwapRingSize = 2
+		}
 		s.PersistentWorkers = true
 		s.SaveStateOnTrainEnd = true
 		if s.Architecture == ArchitectureLTX23 {
@@ -265,6 +269,10 @@ func normalizeSettings(s Settings) Settings {
 		s.SDPA = true
 		s.GradientCheckpointing = true
 		s.UsePinnedMemoryBlockSwap = true
+		s.BlockSwapH2DOnly = true
+		if s.BlockSwapRingSize <= 0 {
+			s.BlockSwapRingSize = 2
+		}
 		s.PersistentWorkers = true
 		s.SaveStateOnTrainEnd = true
 	}

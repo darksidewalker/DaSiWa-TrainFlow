@@ -59,7 +59,7 @@ func TestBuildMusubiCommandsUseVendoredSourceAndSharedPython(t *testing.T) {
 		t.Fatalf("command program must use shared runtime, got %q", cmd.Program)
 	}
 	joined := strings.Join(cmd.Args, " ")
-	for _, want := range []string{"-m accelerate.commands.launch", "ltx2_train_network.py", "--network_module networks.lora_ltx2", "--fp8_base", "--dataset_config /tmp/dataset.toml"} {
+	for _, want := range []string{"-m accelerate.commands.launch", "ltx2_train_network.py", "--network_module networks.lora_ltx2", "--fp8_base", "--dataset_config /tmp/dataset.toml", "--block_swap_h2d_only", "--block_swap_ring_size 2"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("LTX train command missing %q in %q", want, joined)
 		}
@@ -96,7 +96,7 @@ func TestBuildMusubiWAN22Command(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(cmd.Args, " ")
-	for _, want := range []string{"wan_train_network.py", "--task i2v-A14B", "--dit /models/wan.safetensors", "--t5 /models/t5.pth", "--vae /models/vae.safetensors", "--network_module networks.lora_wan"} {
+	for _, want := range []string{"wan_train_network.py", "--task i2v-A14B", "--dit /models/wan.safetensors", "--t5 /models/t5.pth", "--vae /models/vae.safetensors", "--network_module networks.lora_wan", "--blocks_to_swap 14", "--block_swap_h2d_only", "--block_swap_ring_size 2"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("WAN train command missing %q in %q", want, joined)
 		}

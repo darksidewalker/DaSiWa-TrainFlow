@@ -82,6 +82,8 @@ const fields = [
   "full_ft_train_text_encoder",
   "full_ft_text_encoder_fallback",
   "use_pinned_memory_for_block_swap",
+  "block_swap_h2d_only",
+  "block_swap_ring_size",
   "persistent_data_loader_workers",
   "save_state_on_train_end",
   "metadata_author",
@@ -500,6 +502,8 @@ function applyKrea2Defaults(save) {
   els.sdpa.checked = true;
   els.gradient_checkpointing.checked = true;
   els.use_pinned_memory_for_block_swap.checked = true;
+  els.block_swap_h2d_only.checked = true;
+  els.block_swap_ring_size.value = els.block_swap_ring_size.value || 2;
   els.persistent_data_loader_workers.checked = true;
   els.save_state_on_train_end.checked = true;
   if (!els.target_epochs.value) els.target_epochs.value = 6;
@@ -523,6 +527,8 @@ function applyVideoDefaults(architecture, save) {
   els.sdpa.checked = true;
   els.gradient_checkpointing.checked = true;
   els.use_pinned_memory_for_block_swap.checked = true;
+  els.block_swap_h2d_only.checked = true;
+  els.block_swap_ring_size.value = els.block_swap_ring_size.value || 2;
   els.persistent_data_loader_workers.checked = true;
   els.save_state_on_train_end.checked = true;
   if (architecture === "ltx23") {

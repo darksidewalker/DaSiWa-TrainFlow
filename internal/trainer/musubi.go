@@ -157,6 +157,10 @@ func buildWAN22MusubiCommand(root string, kind musubiCommandKind, s Settings, da
 			"--vae", s.VAEPath,
 		)
 		args = appendBoolArg(args, "--force_v2_1_time_embedding", true)
+		if s.BlocksToSwap > 0 {
+			args = append(args, "--blocks_to_swap", strconv.Itoa(s.BlocksToSwap))
+		}
+		args = appendBoolArg(args, "--use_pinned_memory_for_block_swap", s.UsePinnedMemoryBlockSwap)
 		args = appendCommonMusubiTrainArgs(args, s)
 	default:
 		return musubiCommand{}, fmt.Errorf("unknown Musubi command kind: %s", kind)
@@ -225,6 +229,9 @@ func musubiTrainingEnv(root string) []string {
 
 func appendCommonMusubiTrainArgs(args []string, s Settings) []string {
 	args = appendBoolArg(args, "--gradient_checkpointing", s.GradientCheckpointing)
+	if s.BlocksToSwap > 0 && s.BlockSwapH2DOnly {
+		args = append(args, "--block_swap_h2d_only", "--block_swap_ring_size", strconv.Itoa(defaultInt(s.BlockSwapRingSize, 2)))
+	}
 	args = appendBoolArg(args, "--sdpa", s.SDPA)
 	args = append(args,
 		"--network_module", s.NetworkModule,

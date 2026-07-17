@@ -101,6 +101,8 @@ type Settings struct {
 	FullFTTrainTextEncoder     bool     `json:"full_ft_train_text_encoder"`
 	FullFTTextEncoderFallback  bool     `json:"full_ft_text_encoder_fallback"`
 	UsePinnedMemoryBlockSwap   bool     `json:"use_pinned_memory_for_block_swap"`
+	BlockSwapH2DOnly           bool     `json:"block_swap_h2d_only"`
+	BlockSwapRingSize          int      `json:"block_swap_ring_size"`
 	PersistentWorkers          bool     `json:"persistent_data_loader_workers"`
 	SaveStateOnTrainEnd        bool     `json:"save_state_on_train_end"`
 	MetadataAuthor             string   `json:"metadata_author"`
