@@ -97,6 +97,7 @@ The runtime tool opens at `http://127.0.0.1:7870`. Click **Verify Runtime**, the
 | FP8 base / scaled                |  &#x1F7E5;  |           &#x1F7E5;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
 | Native FP8 checkpoint detection  |  &#x1F7E5;  |           &#x1F7E5;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
 | Block swap + pinned memory       |  &#x1F7E5;  |           &#x1F7E5;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
+| H2D-only LoRA block swap         |  &#x1F7E5;  |           &#x1F7E5;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
 | VRAM-based batch sizing          |  &#x2705;  |           &#x2705;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
 | Metadata (author + tags)         |  &#x2705;  |           &#x2705;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
 | Text/latent caching              |  &#x1F7E5;  |           &#x1F7E5;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
@@ -242,6 +243,20 @@ Per-block DiT compilation for faster Anima training. Configurable mode, backend 
 <summary><strong>ROCm and Custom PyTorch Note</strong></summary>
 
 CUDA remains the fully supported default. ROCm 6.4 and existing-PyTorch modes are experimental — they disable CUDA-only features (Flash Attention, torch.compile/Triton) automatically. AMD GPU monitoring on Linux works via kernel sysfs and does not require ROCm installed.
+
+</details>
+
+<details>
+<summary><strong>H2D-only Musubi Block Swap</strong></summary>
+
+LTX 2.3, Wan 2.2, and Krea 2 LoRA profiles use Musubi's H2D-only block swap by default when block swap is enabled. The frozen base weights keep a master copy in CPU RAM, so only host-to-device transfers are needed; the redundant device-to-host copy used by classic block swap is skipped. This is especially useful with FP8 base/scaled weights.
+
+The Advanced Musubi dialog exposes **H2D-only block swap (LoRA)** and **H2D ring buffers**. The default ring size is `2` for transfer/compute overlap; select `1` to minimize VRAM at the cost of that overlap.
+
+Requirements and limits:
+- CUDA and frozen-base LoRA / LoHa / LoKr training only; it is not compatible with full base-model fine-tuning.
+- Gradient checkpointing is required and is enabled by the Musubi profile defaults.
+- Do not combine it with LTX 2 aggressive block-swap modes.
 
 </details>
 
