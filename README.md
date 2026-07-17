@@ -335,4 +335,4 @@ Do not commit `python_embeded/` to Git.
 
 ## Credits
 
-Built on the [`sd-scripts`](https://github.com/kohya-ss/sd-scripts) training stack. Video training powered by [musubi-tuner](https://github.com/kohya-ss/musubi-tuner). The original [Anima TrainFlow](https://github.com/ThetaCursed/Anima-TrainFlow) by ThetaCursed inspired the portable trainer concept.
+Built on the [`sd-scripts`](https://github.com/kohya-ss/sd-scripts) training stack. Video training powered by [musubi-tuner](https://github.com/kohya-ss/musubi-tuner). TrainFlow's Musubi integration, including H2D-only block swap support, credits [AkaneTendo25/musubi-tuner](https://github.com/AkaneTendo25/musubi-tuner). The original [Anima TrainFlow](https://github.com/ThetaCursed/Anima-TrainFlow) by ThetaCursed inspired the portable trainer concept.
