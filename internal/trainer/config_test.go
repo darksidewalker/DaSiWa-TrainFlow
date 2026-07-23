@@ -193,6 +193,42 @@ func TestApplyStableDefaults_rankAlpha_preserved(t *testing.T) {
 	}
 }
 
+func TestApplyStableDefaults_Krea2AdamWUsesConservativeExposure(t *testing.T) {
+	dataset := t.TempDir()
+	for i := 0; i < 20; i++ {
+		if err := os.WriteFile(filepath.Join(dataset, fmt.Sprintf("%d.png", i)), nil, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, _ := applyStableDefaults(Settings{
+		Architecture: ArchitectureKrea2,
+		DatasetPath:  dataset,
+		Optimizer:    "AdamW8bit",
+	})
+	if result.TrainingSteps != 350 {
+		t.Errorf("Krea2 AdamW8bit steps = %d, want 350", result.TrainingSteps)
+	}
+}
+
+func TestApplyStableDefaults_Krea2ProdigyUsesShorterExposure(t *testing.T) {
+	dataset := t.TempDir()
+	for i := 0; i < 20; i++ {
+		if err := os.WriteFile(filepath.Join(dataset, fmt.Sprintf("%d.png", i)), nil, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, _ := applyStableDefaults(Settings{
+		Architecture: ArchitectureKrea2,
+		DatasetPath:  dataset,
+		Optimizer:    "Prodigy",
+	})
+	if result.TrainingSteps != 200 {
+		t.Errorf("Krea2 Prodigy steps = %d, want 200", result.TrainingSteps)
+	}
+}
+
 func TestCreateTrainingTOML_alpha_written(t *testing.T) {
 	// Verify that network_alpha in the TOML uses s.NetworkAlpha, not s.NetworkRank.
 	tmp := t.TempDir()

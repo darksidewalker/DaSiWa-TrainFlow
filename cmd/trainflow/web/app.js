@@ -128,6 +128,7 @@ const numericFields = new Set([
   "video_parallel_workers",
   "blocks_to_swap",
   "network_alpha",
+  "block_swap_ring_size",
   "ti_num_vectors",
   "ti_per_device_batch_size"
 ]);

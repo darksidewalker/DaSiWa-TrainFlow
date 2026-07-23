@@ -333,6 +333,25 @@ func TestSaveSettingsWritesMusubiDatasetTOML(t *testing.T) {
 	}
 }
 
+func TestLoadSettingsAcceptsLegacyStringBlockSwapRingSize(t *testing.T) {
+	root := t.TempDir()
+	settingsPath := filepath.Join(root, "training", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(`{"architecture":"ltx23","block_swap_ring_size":"2"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewManager(root, NewHub())
+	if err := m.LoadSettings(); err != nil {
+		t.Fatalf("LoadSettings() returned error for legacy string value: %v", err)
+	}
+	if got := m.Settings().BlockSwapRingSize; got != 2 {
+		t.Fatalf("BlockSwapRingSize = %d, want 2", got)
+	}
+}
+
 func TestMusubiOutputPathDrivesTOMLAndCheckpointDir(t *testing.T) {
 	root := t.TempDir()
 	dataset := filepath.Join(root, "videos")

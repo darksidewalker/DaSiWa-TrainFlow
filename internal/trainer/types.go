@@ -1,8 +1,11 @@
 package trainer
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 // TrainingMode selects the training approach.
@@ -118,6 +121,37 @@ type Settings struct {
 	TILearningRate     string `json:"tiLearningRate"`
 	TIPerDeviceBatchSz int    `json:"tiPerDeviceBatchSize"`
 	TIRandomCrop       bool   `json:"tiRandomCrop"`
+}
+
+// UnmarshalJSON accepts the string value sent by older web builds for
+// block_swap_ring_size while retaining the canonical integer representation.
+func (s *Settings) UnmarshalJSON(data []byte) error {
+	type settingsAlias Settings
+	auxiliary := struct {
+		BlockSwapRingSize json.RawMessage `json:"block_swap_ring_size"`
+		*settingsAlias
+	}{
+		settingsAlias: (*settingsAlias)(s),
+	}
+	if err := json.Unmarshal(data, &auxiliary); err != nil {
+		return err
+	}
+	if len(auxiliary.BlockSwapRingSize) == 0 || string(auxiliary.BlockSwapRingSize) == "null" {
+		return nil
+	}
+	if err := json.Unmarshal(auxiliary.BlockSwapRingSize, &s.BlockSwapRingSize); err == nil {
+		return nil
+	}
+	var legacy string
+	if err := json.Unmarshal(auxiliary.BlockSwapRingSize, &legacy); err != nil {
+		return err
+	}
+	ringSize, err := strconv.Atoi(legacy)
+	if err != nil {
+		return fmt.Errorf("invalid block_swap_ring_size %q: %w", legacy, err)
+	}
+	s.BlockSwapRingSize = ringSize
+	return nil
 }
 
 func DefaultSettings(root string) Settings {

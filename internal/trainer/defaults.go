@@ -106,22 +106,24 @@ func defaultsForProfile(profile trainingProfile) profileDefaults {
 		}
 	case ArchitectureKrea2:
 		return profileDefaults{
-			NetworkRank:        16,
-			NetworkAlpha:       16,
-			LearningRate:       "7e-5",
-			UNetLR:             "7e-5",
-			TextEncoderLR1:     "1e-5",
-			TextEncoderLR2:     "1e-5",
-			Optimizer:          "AdamW8bit",
-			BaseSteps:          1500,
-			TargetRepeats:      38,
+			NetworkRank:    16,
+			NetworkAlpha:   16,
+			LearningRate:   "7e-5",
+			UNetLR:         "7e-5",
+			TextEncoderLR1: "1e-5",
+			TextEncoderLR2: "1e-5",
+			Optimizer:      "AdamW8bit",
+			BaseSteps:      800,
+			// Krea2 adapts quickly. AdamW uses the upstream 16-epoch
+			// baseline; Prodigy is handled separately below with 8 repeats.
+			TargetRepeats:      16,
 			VideoTargetRepeats: 0,
 			VideoTargetEpochs:  0,
 			VideoTargetSteps:   0,
 			VideoMinSteps:      0,
 			VideoMaxSteps:      0,
-			MinSteps:           1000,
-			MaxSteps:           2500,
+			MinSteps:           100,
+			MaxSteps:           800,
 		}
 	default:
 		return profileDefaults{
@@ -186,7 +188,9 @@ func applyStableDefaultsWithVRAM(s Settings, totalVRAMMB int) (Settings, string)
 	s.FlashAttention = false
 	s = normalizeSettings(s)
 
-	// Optimizer-aware step adjustment: Prodigy converges ~25% faster.
+	// Optimizer-aware step adjustment. Krea2 has its own conservative
+	// exposure policy because it learns substantially faster than the other
+	// image profiles; do not apply the generic optimizer floors to it.
 	optSteps := optimizerStepsFor(s.Optimizer)
 
 	effectiveBatch := s.TrainBatchSize * s.GradientAccumulationSteps
@@ -200,15 +204,26 @@ func applyStableDefaultsWithVRAM(s Settings, totalVRAMMB int) (Settings, string)
 	if targetRepeats < 1 {
 		targetRepeats = 1
 	}
-	steps := int(math.Ceil(float64(imageCount*targetRepeats) / float64(effectiveBatch)))
 
 	// Scale min/max bounds by optimizer multiplier.
 	optMin := int(math.Round(float64(defaults.MinSteps) * optSteps.StepMultiplier))
 	optMax := int(math.Round(float64(defaults.MaxSteps) * optSteps.StepMultiplier))
-	// Enforce optimizer absolute floor.
-	if optMin < optSteps.AbsoluteMin {
+	if profile.Architecture == ArchitectureKrea2 {
+		// The Krea2 upstream example uses 16 epochs with AdamW. Prodigy has
+		// no upstream Krea2 recommendation, so use a deliberately shorter
+		// 8-repeat trial and retain a 600-step safety ceiling.
+		targetRepeats = defaults.TargetRepeats
+		optMin = defaults.MinSteps
+		optMax = defaults.MaxSteps
+		if strings.EqualFold(s.Optimizer, "Prodigy") {
+			targetRepeats = 8
+			optMax = 600
+		}
+	} else if optMin < optSteps.AbsoluteMin {
+		// Enforce generic optimizer absolute floors for other profiles.
 		optMin = optSteps.AbsoluteMin
 	}
+	steps := int(math.Ceil(float64(imageCount*targetRepeats) / float64(effectiveBatch)))
 
 	// LoRA needs a minimum number of optimizer steps to converge properly
 	// (scheduler warmup, AdamW/Prodigy buffers, cosine decay). When effective
