@@ -331,6 +331,20 @@ models/       # base model files (DiT, VAE, text encoders, ...)
 Both folders are created automatically if they do not exist yet.
 In the UI, choose paths under `/app/datasets/...` and `/app/models/...`.
 
+**Datasets live on your machine, not in the container.** Both folders are
+bind-mounted in, so everything you put in `datasets/` or `models/` stays on
+the host, is visible from both sides, and is safe across container restarts,
+image rebuilds, and even `volume rm trainflow_tf` (the volume only holds the
+Python runtime and app state — never your data).
+
+To keep your data in a different place, point `DATASETS_DIR` (and
+`MODELS_DIR`) at it — works for both `scripts/run.sh` and compose:
+
+```bash
+DATASETS_DIR=/path/to/datasets ./scripts/run.sh
+DATASETS_DIR=/path/to/datasets podman compose up -d
+```
+
 Model files (~20 GB) can be downloaded through the Runtime Tool (step 3) or
 copied over from a normal, non-container install.
 
