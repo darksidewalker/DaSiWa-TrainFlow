@@ -14,7 +14,6 @@ services:
     environment:
       TRAINFLOW_NO_BROWSER: "1"
       TORCH_BACKEND: "${TORCH_BACKEND:-cuda13}"
-      # Set to "off" only when using the pre-baked image variant (plan task 7, option B)
       TRAINFLOW_BOOTSTRAP: "${TRAINFLOW_BOOTSTRAP:-auto}"
     volumes:
       - trainflow_tf:/app
