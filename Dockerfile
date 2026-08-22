@@ -30,14 +30,16 @@ RUN set -eux \
  && rm -rf /tmp/uv.tar.gz /tmp/uv-* \
  && uv --version
 
-COPY --from=build /out/TrainFlow /out/TrainFlow_Runtime_Tool /app-staging/
-COPY training/ /app-staging/training/
-COPY scripts/entrypoint.sh /app-staging/scripts/entrypoint.sh
-COPY scripts/ensure-runtime.sh /app-staging/scripts/ensure-runtime.sh
-RUN mkdir -p /app/python_embeded /app/models /app/datasets \
- && cp -a /app-staging/. /app/ \
- && chmod +x /app/TrainFlow /app/TrainFlow_Runtime_Tool /app/scripts/*.sh \
- && rm -rf /app-staging
+# The app layer lives OUTSIDE the /app named volume so image rebuilds are
+# picked up: the entrypoint syncs /opt/trainflow -> /app on every start.
+# (Podman/Docker seed a named volume with image contents only on FIRST mount,
+# so a volume mounted at /app would keep stale binaries/scripts forever.)
+COPY --from=build /out/TrainFlow /out/TrainFlow_Runtime_Tool /opt/trainflow/
+COPY training/ /opt/trainflow/training/
+COPY scripts/entrypoint.sh /opt/trainflow/entrypoint.sh
+COPY scripts/ensure-runtime.sh /opt/trainflow/ensure-runtime.sh
+RUN chmod +x /opt/trainflow/TrainFlow /opt/trainflow/TrainFlow_Runtime_Tool /opt/trainflow/entrypoint.sh /opt/trainflow/ensure-runtime.sh \
+ && mkdir -p /app/python_embeded /app/datasets
 
 WORKDIR /app
 ENV TRAINFLOW_NO_BROWSER=1 \
@@ -46,4 +48,4 @@ ENV TRAINFLOW_NO_BROWSER=1 \
 EXPOSE 7860 7870
 HEALTHCHECK --interval=15s --timeout=5s --retries=5 \
   CMD curl -fsS http://127.0.0.1:7860/ >/dev/null || exit 1
-ENTRYPOINT ["/app/scripts/entrypoint.sh"]
+ENTRYPOINT ["/opt/trainflow/entrypoint.sh"]
