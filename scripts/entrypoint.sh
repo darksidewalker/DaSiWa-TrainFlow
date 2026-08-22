@@ -6,10 +6,18 @@ set -eu
 cd /app
 
 PY=/app/python_embeded/linux/bin/python
+READY=/app/python_embeded/linux/.trainflow-ready
 
 need_bootstrap=0
-if [ ! -x "$PY" ] || ! "$PY" -c "import torch" >/dev/null 2>&1; then
+if [ ! -f "$READY" ]; then
   need_bootstrap=1
+fi
+# If the marker is missing but a full runtime is present (e.g. pre-baked or
+# created natively), create the marker so we don't needlessly re-bootstrap.
+if [ ! -f "$READY" ] && [ -x "$PY" ] && "$PY" -c "import torch, accelerate, transformers, diffusers, cv2" >/dev/null 2>&1; then
+  echo "[entrypoint] full runtime present; marking ready"
+  : > "$READY"
+  need_bootstrap=0
 fi
 
 if [ "${TRAINFLOW_BOOTSTRAP:-auto}" = "off" ]; then

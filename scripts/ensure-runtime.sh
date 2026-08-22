@@ -55,4 +55,6 @@ echo "[runtime] installing UI/prep dependencies..."
 
 echo "[runtime] verifying..."
 "$PY" -c "import torch, accelerate, transformers, diffusers, cv2; print('torch', torch.__version__, 'cuda_available', torch.cuda.is_available())"
+# Marker so the entrypoint can skip the bootstrap on later starts.
+: > /app/python_embeded/linux/.trainflow-ready
 echo "[runtime] bootstrap complete"
