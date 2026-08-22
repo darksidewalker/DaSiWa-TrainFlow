@@ -52,6 +52,7 @@ htmlcov/
 
 # Local environment files (secrets)
 .env
+.env.docker
 
 # Hugging Face and other caches
 # Note: huggingface_hub often uses .cache/huggingface for local metadata
