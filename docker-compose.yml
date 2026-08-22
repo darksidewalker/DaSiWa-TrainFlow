@@ -1,0 +1,48 @@
+name: trainflow
+
+services:
+  trainflow:
+    image: dasiwa/trainflow:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "7860:7860"   # TrainFlow UI
+      - "7870:7870"   # Runtime Tool UI
+    ipc: host         # required by torch DataLoader; Podman rejects shm-size with ipc=host
+    init: true
+    environment:
+      TRAINFLOW_NO_BROWSER: "1"
+      TORCH_BACKEND: "${TORCH_BACKEND:-cuda13}"
+      # Set to "off" only when using the pre-baked image variant (plan task 7, option B)
+      TRAINFLOW_BOOTSTRAP: "${TRAINFLOW_BOOTSTRAP:-auto}"
+    volumes:
+      - trainflow_tf:/app
+      - ${DATASETS_DIR:-./datasets}:/app/datasets
+      - ${MODELS_DIR:-./models}:/app/models
+      # Optional: expose host nvidia-smi so the UI GPU tiles work
+      # (nvidia-smi is a host tool, not part of the GPU device/CDI spec):
+      # - /usr/bin/nvidia-smi:/usr/local/bin/nvidia-smi:ro
+    restart: unless-stopped
+
+  # Second service: Runtime Tool sharing the same app volume.
+  # Start it explicitly (podman compose up trainflow-tool) when you need
+  # to install/verify the python runtime or download model files.
+  trainflow-tool:
+    image: dasiwa/trainflow:latest
+    environment:
+      TRAINFLOW_NO_BROWSER: "1"
+      TORCH_BACKEND: "${TORCH_BACKEND:-cuda13}"
+      TRAINFLOW_BOOTSTRAP: "${TRAINFLOW_BOOTSTRAP:-auto}"
+      TRAINFLOW_BIN: TrainFlow_Runtime_Tool
+    ipc: host
+    init: true
+    ports:
+      - "7871:7870"   # offset host port; container port stays 7870
+    volumes:
+      - trainflow_tf:/app
+      - ${MODELS_DIR:-./models}:/app/models
+    restart: "no"
+
+volumes:
+  trainflow_tf:
