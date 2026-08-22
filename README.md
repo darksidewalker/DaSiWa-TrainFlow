@@ -348,6 +348,11 @@ DATASETS_DIR=/path/to/datasets podman compose up -d
 Model files (~20 GB) can be downloaded through the Runtime Tool (step 3) or
 copied over from a normal, non-container install.
 
+One exception: **training results** (the project output folder) are written
+inside the container to `/app/training/output/<project>` — that lives in the
+`trainflow_tf` volume, not on your machine. To grab a finished LoRA, copy it
+out of the volume (e.g. `podman cp trainflow:/app/training/output/<project> .`).
+
 ### 3. Runtime Tool (optional)
 
 The Runtime Tool is where you install or update the Python runtime and where
