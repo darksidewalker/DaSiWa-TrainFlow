@@ -288,52 +288,82 @@ Note: upstream Musubi source is `https://github.com/kohya-ss/musubi-tuner`. The 
 
 ## Container (Docker / Podman)
 
-The whole app + training stack runs in one container, identical on Docker and
-Podman. The Python runtime (Python 3.12 + PyTorch + trainer deps) is installed
-**once** into the `trainflow_tf` volume on first start (~5-10 min, ~8 GB);
-later starts are instant.
+You can run the whole app in a container. It behaves the same on Docker and
+on Podman — `scripts/run.sh` detects which engine you have and sets the right
+GPU flags automatically.
 
-<details>
-<summary><strong>Quick start</strong></summary>
+**First start** installs the Python training stack (Python 3.12 + PyTorch +
+trainer dependencies) into the `trainflow_tf` volume. That takes about
+5–10 minutes and uses ~8 GB. **Every start after that is fast.**
 
-```bash
-./scripts/run.sh          # auto-detects docker/podman + GPU flags
-# UI:  http://127.0.0.1:7860
-```
+### 1. Build and start
 
-First start runs in the foreground so you can watch the one-time runtime
-bootstrap. Re-run afterwards (or set the volume aside) and it detaches.
-
-Compose (CPU-safe, no GPU flags — GPU goes through `scripts/run.sh`):
+The first time, build the image **and** start the app in one command:
 
 ```bash
-DATASETS_DIR=/path/to/datasets MODELS_DIR=/path/to/models podman compose up -d
-podman compose up -d trainflow-tool   # Runtime Tool UI on http://127.0.0.1:7871/
+TRAINFLOW_BUILD=1 ./scripts/run.sh
 ```
 
-</details>
+- **First start** has no runtime volume yet, so it runs in the foreground
+  and shows the one-time bootstrap as it happens. Let it finish.
+- **Every later start** just runs the app in the background — the image is
+  already built and the volume already exists:
 
-<details>
-<summary><strong>Notes & pitfalls</strong></summary>
+```bash
+./scripts/run.sh
+```
 
-- **Datasets / models**: bind-mounted at `/app/datasets` and `/app/models`.
-  Pick `/app/datasets/...` in the UI. Model files (DiT/VAE/encoder, ~20 GB)
-  are downloaded via the Runtime Tool or copied from a native install.
-- **GPU**: Podman uses CDI `--device nvidia.com/gpu=all` (host needs
-  `nvidia-container-toolkit` CDI, e.g. `/etc/cdi/nvidia.yaml`); Docker uses
-  `--gpus all`. ROCm: add `--device /dev/kfd --device /dev/dri`,
+(If you ever need to rebuild the image on its own without starting the app,
+run `podman build --format docker -t dasiwa/trainflow:latest .` — or
+`docker build -t dasiwa/trainflow:latest .` on a Docker host.)
+
+When it is up, open the UI at `http://127.0.0.1:7860`.
+
+### 2. Where your files go
+
+The container looks for your data next to the project folder:
+
+```
+datasets/     # your image / video datasets
+models/       # base model files (DiT, VAE, text encoders, ...)
+```
+
+Both folders are created automatically if they do not exist yet.
+In the UI, choose paths under `/app/datasets/...` and `/app/models/...`.
+
+Model files (~20 GB) can be downloaded through the Runtime Tool (step 3) or
+copied over from a normal, non-container install.
+
+### 3. Runtime Tool (optional)
+
+The Runtime Tool is where you install or update the Python runtime and where
+you download model files. It shares the same volume as the main app, so you
+start it with compose:
+
+```bash
+# use whichever engine you have — podman or docker:
+podman compose up -d trainflow-tool
+```
+
+It opens at `http://127.0.0.1:7871`. When you are done:
+
+```bash
+podman compose stop trainflow-tool
+```
+
+### Good to know
+
+- **GPU.** `scripts/run.sh` passes the GPU to the container for you —
+  Docker uses `--gpus all`, Podman uses the host's NVIDIA CDI
+  (`--device nvidia.com/gpu=all`). Training only uses GPU 0.
+  For AMD ROCm instead: add `--device /dev/kfd --device /dev/dri` and set
   `TORCH_BACKEND=rocm`.
-- **nvidia-smi for the UI GPU tiles**: the launcher bind-mounts the host
-  binary. Without it the app still trains — the GPU tile just stays empty.
-- **`ipc: host`** is required by torch DataLoader and is never combined with
-  `shm-size` (Podman rejects the pair).
-- **Single GPU**: training runs on `CUDA_VISIBLE_DEVICES=0`.
-- **Updating the app in a container** = rebuild the image
-  (`TRAINFLOW_BUILD=1 ./scripts/run.sh`). The Runtime Tool's "Update
-  App Binaries" step is a no-op inside the container (no git checkout), but
-  its Python-runtime install/update still works and persists in the volume.
-
-</details>
+- **GPU tiles in the UI.** The launcher bind-mounts the host's `nvidia-smi`
+  so the live GPU tiles work. If it is missing, training still runs — the
+  GPU tiles just stay empty.
+- **Update the app.** Rebuild the image: `TRAINFLOW_BUILD=1 ./scripts/run.sh`.
+- **Start over from scratch.** Delete the runtime volume to force a
+  re-bootstrap: `podman volume rm trainflow_tf` (or `docker volume rm trainflow_tf`).
 
 ---
 
