@@ -286,6 +286,57 @@ Note: upstream Musubi source is `https://github.com/kohya-ss/musubi-tuner`. The 
 
 ---
 
+## Container (Docker / Podman)
+
+The whole app + training stack runs in one container, identical on Docker and
+Podman. The Python runtime (Python 3.12 + PyTorch + trainer deps) is installed
+**once** into the `trainflow_tf` volume on first start (~5-10 min, ~8 GB);
+later starts are instant.
+
+<details>
+<summary><strong>Quick start</strong></summary>
+
+```bash
+./scripts/run.sh          # auto-detects docker/podman + GPU flags
+# UI:  http://127.0.0.1:7860
+```
+
+First start runs in the foreground so you can watch the one-time runtime
+bootstrap. Re-run afterwards (or set the volume aside) and it detaches.
+
+Compose (CPU-safe, no GPU flags — GPU goes through `scripts/run.sh`):
+
+```bash
+DATASETS_DIR=/path/to/datasets MODELS_DIR=/path/to/models podman compose up -d
+podman compose up -d trainflow-tool   # Runtime Tool UI on http://127.0.0.1:7871/
+```
+
+</details>
+
+<details>
+<summary><strong>Notes & pitfalls</strong></summary>
+
+- **Datasets / models**: bind-mounted at `/app/datasets` and `/app/models`.
+  Pick `/app/datasets/...` in the UI. Model files (DiT/VAE/encoder, ~20 GB)
+  are downloaded via the Runtime Tool or copied from a native install.
+- **GPU**: Podman uses CDI `--device nvidia.com/gpu=all` (host needs
+  `nvidia-container-toolkit` CDI, e.g. `/etc/cdi/nvidia.yaml`); Docker uses
+  `--gpus all`. ROCm: add `--device /dev/kfd --device /dev/dri`,
+  `TORCH_BACKEND=rocm`.
+- **nvidia-smi for the UI GPU tiles**: the launcher bind-mounts the host
+  binary. Without it the app still trains — the GPU tile just stays empty.
+- **`ipc: host`** is required by torch DataLoader and is never combined with
+  `shm-size` (Podman rejects the pair).
+- **Single GPU**: training runs on `CUDA_VISIBLE_DEVICES=0`.
+- **Updating the app in a container** = rebuild the image
+  (`TRAINFLOW_BUILD=1 ./scripts/run.sh`). The Runtime Tool's "Update
+  App Binaries" step is a no-op inside the container (no git checkout), but
+  its Python-runtime install/update still works and persists in the volume.
+
+</details>
+
+---
+
 ## Development
 
 <details>
