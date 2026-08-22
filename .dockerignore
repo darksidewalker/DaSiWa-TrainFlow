@@ -1,0 +1,34 @@
+# versioned root binaries are rebuilt inside the image
+TrainFlow
+TrainFlow.exe
+TrainFlow_Runtime_Tool
+TrainFlow_Runtime_Tool.exe
+dist/
+
+# generated / local state (all git-ignored)
+.git/
+.hermes/
+.projectatlas/
+.runtime-update/
+python_embeded/
+python_embeded_*_backup*/
+models/
+training/output/
+training/prepared/
+training/logs/
+training/settings.json
+training/settings.json.bak
+training/musubi-tuner/.venv/
+training/musubi-tuner/venv/
+training/musubi-tuner/datasets/
+training/musubi-tuner/output/
+training/musubi-tuner/outputs/
+training/musubi-tuner/logs/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.log
+__pycache__/
+*.py[cod]
