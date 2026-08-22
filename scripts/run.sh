@@ -24,7 +24,12 @@ CE=$(detect_engine) || { echo "No container engine found (install docker or podm
 echo "Using container engine: $CE"
 
 if [[ "${TRAINFLOW_BUILD:-0}" == "1" ]]; then
-  "$CE" build -t "$IMAGE" .
+  # docker format: keeps HEALTHCHECK; podman's default OCI format ignores it.
+  if [[ "$CE" == "podman" ]]; then
+    "$CE" build --format docker -t "$IMAGE" .
+  else
+    "$CE" build -t "$IMAGE" .
+  fi
 fi
 
 GPU_ARGS=()

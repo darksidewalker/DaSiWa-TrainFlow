@@ -15,8 +15,20 @@ FROM docker.io/python:3.12-bookworm
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates curl libgl1 libglib2.0-0 \
  && rm -rf /var/lib/apt/lists/*
-# uv for the one-time python runtime bootstrap (option A) or pre-baking (option B)
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh -s -- --bin-dir /usr/local/bin
+# uv for the one-time python runtime bootstrap (option A) or pre-baking (option B).
+# Direct platform binary download, same URLs as internal/runtimeops ensureUV.
+# The tarball nests the binary under <pkg>/uv (older releases shipped a flat `uv`).
+RUN set -eux \
+ && case "$(uname -m)" in \
+    x86_64)  UV_PKG=uv-x86_64-unknown-linux-gnu.tar.gz ;; \
+    aarch64) UV_PKG=uv-aarch64-unknown-linux-gnu.tar.gz ;; \
+    *) echo "unsupported architecture $(uname -m)" && exit 1 ;; \
+ esac \
+ && curl -LsSf "https://github.com/astral-sh/uv/releases/latest/download/$UV_PKG" -o /tmp/uv.tar.gz \
+ && tar xzf /tmp/uv.tar.gz -C /tmp \
+ && install -m 0755 "$(find /tmp -maxdepth 2 -name uv -type f | head -n1)" /usr/local/bin/uv \
+ && rm -rf /tmp/uv.tar.gz /tmp/uv-* \
+ && uv --version
 
 COPY --from=build /out/TrainFlow /out/TrainFlow_Runtime_Tool /app-staging/
 COPY training/ /app-staging/training/
