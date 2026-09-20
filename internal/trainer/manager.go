@@ -1067,6 +1067,7 @@ import subprocess
 import sys
 
 for command in json.loads(sys.argv[1]):
+    command = [sys.executable] + command
     print("$ " + " ".join(command), flush=True)
     subprocess.check_call(command)
 `
