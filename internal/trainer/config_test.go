@@ -263,6 +263,101 @@ func TestCreateTrainingTOML_alpha_written(t *testing.T) {
 	}
 }
 
+func TestCreateTrainingTOML_mixedPrecisionDefaultsToBF16(t *testing.T) {
+	// Volta/Pascal cards (V100, P40) have no bf16 hardware and need fp16.
+	// s.MixedPrecision unset must still produce the historical "bf16" TOML
+	// byte-for-byte, so this change is opt-in and upstream diffs stay clean.
+	tmp := t.TempDir()
+	for _, arch := range []string{ArchitectureAnima, ArchitectureSDXL} {
+		s := normalizeSettings(Settings{
+			Architecture:  arch,
+			ProjectName:   "precision-default",
+			OutputPath:    tmp,
+			DatasetPath:   tmp,
+			NetworkRank:   48,
+			NetworkAlpha:  32,
+			LearningRate:  "1e-4",
+			TrainingSteps: 1000,
+			SaveSteps:     100,
+		})
+		path, err := createTrainingTOML(s.ProjectName, s, profileFor(s), s.OutputPath, "", tmp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		toml := string(data)
+		for _, want := range []string{"mixed_precision = \"bf16\"", "save_precision = \"bf16\""} {
+			if !strings.Contains(toml, want) {
+				t.Errorf("%s: TOML should default to %q, got:\n%s", arch, want, toml)
+			}
+		}
+	}
+}
+
+func TestCreateTrainingTOML_mixedPrecisionHonoursFP16(t *testing.T) {
+	tmp := t.TempDir()
+	for _, arch := range []string{ArchitectureAnima, ArchitectureSDXL} {
+		s := normalizeSettings(Settings{
+			Architecture:   arch,
+			ProjectName:    "precision-fp16",
+			OutputPath:     tmp,
+			DatasetPath:    tmp,
+			NetworkRank:    48,
+			NetworkAlpha:   32,
+			LearningRate:   "1e-4",
+			TrainingSteps:  1000,
+			SaveSteps:      100,
+			MixedPrecision: "fp16",
+		})
+		path, err := createTrainingTOML(s.ProjectName, s, profileFor(s), s.OutputPath, "", tmp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		toml := string(data)
+		for _, want := range []string{"mixed_precision = \"fp16\"", "save_precision = \"fp16\""} {
+			if !strings.Contains(toml, want) {
+				t.Errorf("%s: TOML should honour fp16, got:\n%s", arch, want)
+			}
+		}
+		if strings.Contains(toml, "\"bf16\"") {
+			t.Errorf("%s: TOML should not still say bf16 anywhere:\n%s", arch, toml)
+		}
+	}
+}
+
+func TestCreateTITrainingTOML_mixedPrecisionHonoursFP16(t *testing.T) {
+	tmp := t.TempDir()
+	s := DefaultSettings(tmp)
+	s.Architecture = ArchitectureAnima
+	s.ProjectName = "ti-precision"
+	s.DiTPath = filepath.Join(tmp, "dit")
+	s.QwenPath = filepath.Join(tmp, "qwen")
+	s.VAEPath = filepath.Join(tmp, "vae")
+	s.OutputPath = tmp
+	s.TrainingSteps = 1000
+	s.SaveSteps = 100
+	s.MixedPrecision = "fp16"
+	path, err := createTITrainingTOML(s.ProjectName, s, profileFor(s), tmp, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toml := string(data)
+	if !strings.Contains(toml, "mixed_precision = \"fp16\"") {
+		t.Errorf("TI TOML should honour fp16, got:\n%s", toml)
+	}
+}
+
 func TestCreateTrainingTOML_trainingPreviewsToggle(t *testing.T) {
 	tmp := t.TempDir()
 	s := normalizeSettings(Settings{
