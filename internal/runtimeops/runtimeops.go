@@ -27,9 +27,21 @@ const (
 	pythonVersion = "3.12.10"
 	pythonTag     = "312"
 
-	TorchBackendCUDA13 = "cuda13"
-	TorchBackendROCm   = "rocm"
-	TorchBackendSkip   = "skip"
+	TorchBackendCUDA13  = "cuda13"
+	TorchBackendCUDA126 = "cuda126"
+	TorchBackendROCm    = "rocm"
+	TorchBackendSkip    = "skip"
+
+	// Pinned deliberately. The cu126 index carries wheels up to 2.14, but
+	// Volta was dropped at torch 2.11 and Pascal before that, so an unpinned
+	// "--upgrade torch ... --index-url .../cu126" resolves to a build with
+	// no sm_70 or sm_61 kernels and fails exactly as cu130 does - it looks
+	// like a fix and is not one. 2.7.1 is the newest cu126 release whose
+	// arch list still covers both; verified on a Tesla V100 32GB as
+	// ['sm_50','sm_60','sm_70','sm_75','sm_80','sm_86','sm_90'].
+	torchCUDA126Version       = "2.7.1+cu126"
+	torchvisionCUDA126Version = "0.22.1+cu126"
+	torchaudioCUDA126Version  = "2.7.1+cu126"
 
 	flashAttentionPackage               = "flash_attn"
 	flashAttentionPyPIName              = "flash-attn"
@@ -119,6 +131,24 @@ func torchInstallPlan(opts TorchInstallOptions) torchInstallPlanResult {
 			Args:              []string{"--upgrade", "torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cu130"},
 			AllowCUDAFeatures: true,
 			Description:       "PyTorch CUDA 13.0 wheels",
+		}
+	case TorchBackendCUDA126:
+		// For Volta (V100, sm_70) and Pascal (P40, sm_61). CUDA 13 dropped
+		// both, so the default cuda13 backend installs wheels with no kernels
+		// for these cards and training cannot start at all. cu126 also runs on
+		// older drivers through CUDA minor-version compatibility, which is
+		// what makes it usable on a 535-series driver.
+		return torchInstallPlanResult{
+			Args: []string{
+				"--upgrade",
+				"torch==" + torchCUDA126Version,
+				"torchvision==" + torchvisionCUDA126Version,
+				"torchaudio==" + torchaudioCUDA126Version,
+				"--index-url", "https://download.pytorch.org/whl/cu126",
+			},
+			AllowCUDAFeatures: true,
+			Description:       "PyTorch CUDA 12.6 wheels (Volta/Pascal, pinned " + torchCUDA126Version + ")",
+			Warning:           "NOTE: CUDA 12.6 is for Volta (V100) and Pascal (P40/GTX 10xx), which CUDA 13 no longer supports. Versions are pinned to " + torchCUDA126Version + " because newer cu126 wheels also dropped these architectures. Use the CUDA 13.0 default on Turing or newer.",
 		}
 	case TorchBackendROCm:
 		return torchInstallPlanResult{

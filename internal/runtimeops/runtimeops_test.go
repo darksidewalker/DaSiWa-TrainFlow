@@ -234,3 +234,49 @@ func TestMatchesPrebuiltFlashAttentionWheel(t *testing.T) {
 		}
 	}
 }
+
+func TestTorchInstallPlanCUDA126TargetsVoltaPascalWithPinnedVersions(t *testing.T) {
+	plan := torchInstallPlan(TorchInstallOptions{Backend: TorchBackendCUDA126, InstallFlashAttention: true, InstallTorchCompileDeps: true})
+
+	if plan.SkipTorchInstall {
+		t.Fatal("cuda126 backend should install torch wheels")
+	}
+	if !plan.AllowCUDAFeatures {
+		t.Fatal("cuda126 is still CUDA, so optional CUDA-only features must stay available")
+	}
+	joined := strings.Join(plan.Args, " ")
+	if !strings.Contains(joined, "https://download.pytorch.org/whl/cu126") {
+		t.Fatalf("cuda126 torch args should use the cu126 wheel index, got %q", joined)
+	}
+
+	// The whole point of this backend. cu126 publishes wheels well past the
+	// last release that still builds sm_70/sm_61 kernels, so an unpinned
+	// upgrade installs something that cannot run on the very cards this
+	// option exists for.
+	for _, pinned := range []string{
+		"torch==" + torchCUDA126Version,
+		"torchvision==" + torchvisionCUDA126Version,
+		"torchaudio==" + torchaudioCUDA126Version,
+	} {
+		if !strings.Contains(joined, pinned) {
+			t.Fatalf("cuda126 args must pin %s, got %q", pinned, joined)
+		}
+	}
+	for _, unpinned := range []string{" torch ", " torchvision ", " torchaudio "} {
+		if strings.Contains(" "+joined+" ", unpinned) {
+			t.Fatalf("cuda126 args must not install an unpinned package (%q), got %q", strings.TrimSpace(unpinned), joined)
+		}
+	}
+}
+
+func TestTorchInstallPlanCUDA13RemainsTheDefaultForUnknownBackends(t *testing.T) {
+	// Adding cuda126 must not change what an empty or unrecognised backend
+	// does, so existing installs keep behaving exactly as before.
+	for _, backend := range []string{"", "nonsense"} {
+		plan := torchInstallPlan(TorchInstallOptions{Backend: backend})
+		joined := strings.Join(plan.Args, " ")
+		if !strings.Contains(joined, "https://download.pytorch.org/whl/cu130") {
+			t.Fatalf("backend %q should still fall through to the CUDA 13 default, got %q", backend, joined)
+		}
+	}
+}
