@@ -125,9 +125,9 @@
               <option value="lokr">LoKr</option>
             </select>
           </label>
-          <label class="profile-field profile-sdxl profile-anima" title="LoKr only. How each weight is split into two Kronecker factors. -1 = balanced automatically; 4, 8 or 16 force a small factor of that size. If Rank is large next to the factored size, LoKr trains the second factor as a full matrix (logged as a warning).">
+          <label class="profile-field profile-sdxl profile-anima" title="LoKr only. Leave empty for the standard preset: factor 8, full matrix, Rank and Alpha ignored. Smaller factors (4) learn more and make bigger files; larger (16) learn less. Typing a factor uses your Rank and Alpha as entered; -1 splits automatically. 'using full matrix mode' warnings in the log are expected.">
             <span>LoKr Factor</span>
-            <input id="lokr_factor" type="number" min="-1" step="1" placeholder="-1 (auto)">
+            <input id="lokr_factor" type="number" min="-1" step="1" placeholder="empty = preset">
           </label>
           <label>
             <span>Rank</span>

@@ -899,8 +899,12 @@ func TestCreateTrainingTOML_networkType(t *testing.T) {
 				notWant     []string
 			}{
 				{"", 0, []string{fmt.Sprintf("network_module = %q", loraModule[arch])}, []string{"network_args", "networks.lokr"}},
-				{"lokr", 0, []string{"network_module = \"networks.lokr\"", "network_args = [\"factor=-1\"]"}, []string{loraModule[arch] + "\""}},
-				{"LoKr", 8, []string{"network_module = \"networks.lokr\"", "network_args = [\"factor=8\"]"}, nil},
+				{"", 0, []string{"network_dim = 32\n", "network_alpha = 16\n"}, nil},
+				// Empty factor = the full-matrix preset; rank/alpha are overridden.
+				{"lokr", 0, []string{"network_module = \"networks.lokr\"", "network_args = [\"factor=8\"]", "network_dim = 10000\n", "network_alpha = 1\n"}, []string{loraModule[arch] + "\""}},
+				// An explicit factor is taken as typed, with the user's rank/alpha.
+				{"lokr", -1, []string{"network_args = [\"factor=-1\"]", "network_dim = 32\n", "network_alpha = 16\n"}, nil},
+				{"LoKr", 4, []string{"network_module = \"networks.lokr\"", "network_args = [\"factor=4\"]", "network_dim = 32\n"}, nil},
 			} {
 				s := normalizeSettings(Settings{
 					Architecture:   arch,
