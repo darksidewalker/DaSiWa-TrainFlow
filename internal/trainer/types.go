@@ -95,6 +95,8 @@ type Settings struct {
 	BlocksToSwap               int      `json:"blocks_to_swap"`
 	NetworkAlpha               int      `json:"network_alpha"`
 	NetworkModule              string   `json:"network_module"`
+	NetworkType                string   `json:"network_type"` // SDXL/Anima: "lora" (default) or "lokr"
+	LoKrFactor                 int      `json:"lokr_factor"`  // 0 or -1 = auto-balanced factorisation
 	TimestepSampling           string   `json:"timestep_sampling"`
 	DiscreteFlowShift          string   `json:"discrete_flow_shift"`
 	FP8Base                    bool     `json:"fp8_base"`

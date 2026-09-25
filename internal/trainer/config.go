@@ -150,7 +150,7 @@ func writeAnimaTrainingTOML(content *strings.Builder, projectName string, s Sett
 	content.WriteString(fmt.Sprintf("pretrained_model_name_or_path = %s\n", tomlString(filepath.ToSlash(absPath(s.DiTPath)))))
 	content.WriteString(fmt.Sprintf("qwen3 = %s\n", tomlString(filepath.ToSlash(absPath(s.QwenPath)))))
 	content.WriteString(fmt.Sprintf("vae = %s\n", tomlString(filepath.ToSlash(absPath(s.VAEPath)))))
-	content.WriteString("network_module = \"networks.lora_anima\"\n")
+	writeNetworkModuleTOML(content, s, "networks.lora_anima")
 	content.WriteString(fmt.Sprintf("network_dim = %d\n", s.NetworkRank))
 	content.WriteString(fmt.Sprintf("network_alpha = %d\n", s.NetworkAlpha))
 	content.WriteString(fmt.Sprintf("network_train_unet_only = %t\n", s.TrainUNetOnly))
@@ -251,7 +251,7 @@ func writeSDXLTrainingTOML(content *strings.Builder, projectName string, s Setti
 	if strings.TrimSpace(s.VAEPath) != "" && process.FileExists(s.VAEPath) {
 		content.WriteString(fmt.Sprintf("vae = %s\n", tomlString(filepath.ToSlash(absPath(s.VAEPath)))))
 	}
-	content.WriteString("network_module = \"networks.lora\"\n")
+	writeNetworkModuleTOML(content, s, "networks.lora")
 	content.WriteString(fmt.Sprintf("network_dim = %d\n", s.NetworkRank))
 	content.WriteString(fmt.Sprintf("network_alpha = %d\n", s.NetworkAlpha))
 	content.WriteString(fmt.Sprintf("network_train_unet_only = %t\n", s.TrainUNetOnly))
@@ -352,6 +352,27 @@ func countDatasetVideos(datasetPath string) int {
 		}
 	}
 	return count
+}
+
+// writeNetworkModuleTOML picks the sd-scripts network for the SDXL and Anima
+// paths. LoRA keeps the profile's own module, so an unset network_type writes
+// exactly what it always did. LoKr uses sd-scripts' native networks.lokr, which
+// detects SDXL or Anima from the loaded model and needs no LyCORIS install.
+func writeNetworkModuleTOML(content *strings.Builder, s Settings, loraModule string) {
+	if !isLoKr(s) {
+		content.WriteString(fmt.Sprintf("network_module = %s\n", tomlString(loraModule)))
+		return
+	}
+	content.WriteString("network_module = \"networks.lokr\"\n")
+	factor := s.LoKrFactor
+	if factor <= 0 {
+		factor = -1
+	}
+	content.WriteString(fmt.Sprintf("network_args = [%s]\n", tomlString(fmt.Sprintf("factor=%d", factor))))
+}
+
+func isLoKr(s Settings) bool {
+	return strings.EqualFold(strings.TrimSpace(s.NetworkType), "lokr")
 }
 
 func tomlString(value string) string {
