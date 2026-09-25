@@ -176,6 +176,8 @@ These are from 30-step checks on a **V100 32 GB**: SDXL, Illustrious-XL v0.1, 34
 
 LoKr works under both **bf16** and **fp16**. The V100 has no bf16 hardware, which is why its bf16 row is slow. A card from the Ampere generation or newer should run bf16 at full speed.
 
+A full 900-step preset run (fp16, Prodigy, 2.18 s/it) loads in ComfyUI with the standard **Load LoRA** node on an Illustrious checkpoint and reproduces the character.
+
 **Not yet verified:** a full LoKr run on **Anima** (it uses the same module, which detects the architecture itself), and the preset with **AdamW / AdamW8bit** (every run above used Prodigy).
 
 > **Don't raise the preset's rank above 65504 if you save in fp16.** In full-matrix mode `networks.lokr` stores alpha equal to rank, and fp16 overflows at 65504. At rank 100000 all 986 alpha values in the file were saved as `Inf`.
