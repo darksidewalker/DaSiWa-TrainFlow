@@ -85,6 +85,7 @@ The runtime tool opens at `http://127.0.0.1:7870`. Click **Verify Runtime**, the
 | Feature                          | Anima | SDXL / Pony / Illustrious | LTX 2.3 Video | Wan 2.2 Video | Krea 2 Image |
 |----------------------------------|:-----:|:-------------------------:|:-------------:|:-------------:|:------------:|
 | LoRA training                    |  &#x2705;  |           &#x2705;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
+| LoKr training ([details](#lokr))  |  &#x2705;  |           &#x2705;           |    &#x1F7E5;    |    &#x1F7E5;    |   &#x1F7E5;   |
 | Textual Inversion                |  &#x2705;  |           &#x2705;           |    &#x1F7E5;    |    &#x1F7E5;    |   &#x1F7E5;   |
 | Auto Calc (profile-aware)        |  &#x2705;  |           &#x2705;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
 | Training previews (enabled by default) | &#x2705;  |           &#x2705;           |    &#x2705;    |    &#x2705;    |   &#x2705;   |
@@ -119,6 +120,65 @@ The runtime tool opens at `http://127.0.0.1:7870`. Click **Verify Runtime**, the
 | **Krea 2** | RAW DiT + Qwen3-VL + Qwen-Image VAE | `networks.lora_krea2` | 32px | Musubi image |
 
 **Auto Calc** reads your profile and dataset count, then picks rank, learning rates, batch size, gradient accumulation, steps, and save/sample intervals — all tuned to your available VRAM. It preserves your chosen optimizer (Prodigy stays at `lr=1.0` constant; AdamW/AdamW8bit stay at `1e-4` cosine).
+
+---
+
+## LoKr
+
+LoKr is a different kind of adapter from LoRA (it comes from the [LyCORIS](https://github.com/KohakuBlueleaf/LyCORIS) family). Instead of LoRA's two thin matrices, it builds each weight change from two small matrices combined with a Kronecker product. ComfyUI reads LoKr files natively, so you use it like a LoRA.
+
+Available on **SDXL / Pony / Illustrious** and **Anima**. It uses the `networks.lokr` module that ships with sd-scripts, so there is no extra dependency.
+
+### How to use it
+
+1. Pick the **SDXL** or **Anima** profile.
+2. Set **Network Type** to **LoKr**.
+3. **Leave LoKr Factor empty.** That is the preset, and it is the right choice unless you already know LoKr.
+4. Train as usual. **Rank** and **Alpha** are ignored in the preset, so you don't need to change them.
+
+Switching back to **LoRA** gives you exactly the LoRA training you had before.
+
+### What the preset does
+
+An empty factor writes:
+
+```toml
+network_module = "networks.lokr"
+network_args = ["factor=8"]
+network_dim = 10000
+network_alpha = 1
+```
+
+That is factor 8 in **full-matrix mode**. Rank 10000 is not a real rank; it is just large enough that every layer trains its second matrix in full. In full-matrix mode `networks.lokr` ignores alpha, which is why Rank and Alpha stop mattering.
+
+Expect the training log to repeat `LoKr: lora_dim ... using full matrix mode` for every layer. That is normal for the preset, not an error.
+
+### Typing a factor yourself
+
+| LoKr Factor | What happens |
+|-------------|--------------|
+| *empty*     | The preset above. |
+| `4`         | Learns more and makes a bigger file. Uses your Rank and Alpha. |
+| `8`, `16`   | Learns less and makes a smaller file. Uses your Rank and Alpha. |
+| `-1`        | sd-scripts picks balanced factors. Very small files. Uses your Rank and Alpha. |
+
+When you type a factor, whether a layer runs in full-matrix mode depends on your Rank. For example, factor 8 with rank 64 is low-rank on SDXL's larger layers and full-matrix on the smaller ones.
+
+### Measured
+
+These are from 30-step checks on a **V100 32 GB**: SDXL, Illustrious-XL v0.1, 34 images, Prodigy, batch 1.
+
+| Setup | Precision | Speed | Peak VRAM | File |
+|-------|-----------|-------|-----------|------|
+| Preset (factor 8, full matrix) | fp16 | 2.29 s/it | 9.6 GB | 92 MB |
+| Factor -1, rank 64 | fp16 | 2.28 s/it | — | 6.8 MB |
+| Factor -1, rank 64 | bf16 | 6.98 s/it | — | 6.8 MB |
+
+LoKr works under both **bf16** and **fp16**. The V100 has no bf16 hardware, which is why its bf16 row is slow. A card from the Ampere generation or newer should run bf16 at full speed.
+
+**Not yet verified:** a full LoKr run on **Anima** (it uses the same module, which detects the architecture itself), and the preset with **AdamW / AdamW8bit** (every run above used Prodigy).
+
+> **Don't raise the preset's rank above 65504 if you save in fp16.** In full-matrix mode `networks.lokr` stores alpha equal to rank, and fp16 overflows at 65504. At rank 100000 all 986 alpha values in the file were saved as `Inf`.
 
 ---
 
