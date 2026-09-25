@@ -118,6 +118,17 @@
           </label>
           <div id="loraFields" class="ti-mode-group">
           <div class="training-grid">
+          <label class="profile-field profile-sdxl profile-anima" title="LoRA is the standard adapter. LoKr (LyCORIS Kronecker) uses sd-scripts' built-in networks.lokr; ComfyUI loads it like a LoRA.">
+            <span>Network Type</span>
+            <select id="network_type">
+              <option value="lora">LoRA</option>
+              <option value="lokr">LoKr</option>
+            </select>
+          </label>
+          <label class="profile-field profile-sdxl profile-anima" title="LoKr only. Leave empty for the standard preset: factor 8, full matrix, Rank and Alpha ignored. Smaller factors (4) learn more and make bigger files; larger (16) learn less. Typing a factor uses your Rank and Alpha as entered; -1 splits automatically. 'using full matrix mode' warnings in the log are expected.">
+            <span>LoKr Factor</span>
+            <input id="lokr_factor" type="number" min="-1" step="1" placeholder="empty = preset">
+          </label>
           <label>
             <span>Rank</span>
             <input id="network_rank" type="number" min="1" step="1">

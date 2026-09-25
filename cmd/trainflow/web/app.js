@@ -73,6 +73,8 @@ const fields = [
   "blocks_to_swap",
   "network_alpha",
   "network_module",
+  "network_type",
+  "lokr_factor",
   "timestep_sampling",
   "discrete_flow_shift",
   "fp8_base",
@@ -128,6 +130,7 @@ const numericFields = new Set([
   "video_parallel_workers",
   "blocks_to_swap",
   "network_alpha",
+  "lokr_factor",
   "block_swap_ring_size",
   "ti_num_vectors",
   "ti_per_device_batch_size"
@@ -276,6 +279,11 @@ function applySettings(data) {
   syncVideoNormalizerProxiesFromSettings();
   setArchitecture(data.architecture || "anima", false);
   updateOptimizerLrFields();
+  updateNetworkTypeFields();
+}
+
+function updateNetworkTypeFields() {
+  if (els.lokr_factor) els.lokr_factor.disabled = els.network_type.value !== "lokr";
 }
 
 function normalizeArchitecture(value) {
@@ -1089,6 +1097,7 @@ for (const field of Object.values(els)) {
     }
   });
   field.addEventListener("change", () => {
+    if (field.id === "network_type") updateNetworkTypeFields();
     queueSave();
     if (isVideoArchitecture(els.architecture.value) && (field.id.startsWith("video_") || field.id === "dataset_path" || field.id === "output_path")) {
       markMusubiCacheDirty(field.id === "dataset_path" ? "video source changed" : field.id === "output_path" ? "output path changed" : "video parameter changed");
