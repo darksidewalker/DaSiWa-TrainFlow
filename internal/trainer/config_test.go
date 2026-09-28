@@ -884,3 +884,63 @@ func TestTI_UserValuesPreserved(t *testing.T) {
 		t.Errorf("user batch size should be preserved, got %d", result.TIPerDeviceBatchSz)
 	}
 }
+
+func TestCreateTrainingTOML_networkType(t *testing.T) {
+	// LoKr is independent of precision: it must come out the same under bf16
+	// and fp16, and an unset network_type must keep each profile's LoRA module.
+	tmp := t.TempDir()
+	loraModule := map[string]string{ArchitectureAnima: "networks.lora_anima", ArchitectureSDXL: "networks.lora"}
+	for _, arch := range []string{ArchitectureAnima, ArchitectureSDXL} {
+		for _, precision := range []string{"bf16", "fp16"} {
+			for _, tc := range []struct {
+				networkType string
+				factor      int
+				want        []string
+				notWant     []string
+			}{
+				{"", 0, []string{fmt.Sprintf("network_module = %q", loraModule[arch])}, []string{"network_args", "networks.lokr"}},
+				{"", 0, []string{"network_dim = 32\n", "network_alpha = 16\n"}, nil},
+				// Empty factor = the full-matrix preset; rank/alpha are overridden.
+				{"lokr", 0, []string{"network_module = \"networks.lokr\"", "network_args = [\"factor=8\"]", "network_dim = 10000\n", "network_alpha = 1\n"}, []string{loraModule[arch] + "\""}},
+				// An explicit factor is taken as typed, with the user's rank/alpha.
+				{"lokr", -1, []string{"network_args = [\"factor=-1\"]", "network_dim = 32\n", "network_alpha = 16\n"}, nil},
+				{"LoKr", 4, []string{"network_module = \"networks.lokr\"", "network_args = [\"factor=4\"]", "network_dim = 32\n"}, nil},
+			} {
+				s := normalizeSettings(Settings{
+					Architecture:   arch,
+					ProjectName:    "network-type",
+					OutputPath:     tmp,
+					DatasetPath:    tmp,
+					NetworkRank:    32,
+					NetworkAlpha:   16,
+					LearningRate:   "1e-4",
+					TrainingSteps:  1000,
+					SaveSteps:      100,
+					MixedPrecision: precision,
+					NetworkType:    tc.networkType,
+					LoKrFactor:     tc.factor,
+				})
+				path, err := createTrainingTOML(s.ProjectName, s, profileFor(s), s.OutputPath, "", tmp)
+				if err != nil {
+					t.Fatal(err)
+				}
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				toml := string(data)
+				label := fmt.Sprintf("%s/%s/%q", arch, precision, tc.networkType)
+				for _, want := range append(tc.want, fmt.Sprintf("mixed_precision = %q", precision)) {
+					if !strings.Contains(toml, want) {
+						t.Errorf("%s: want %q in:\n%s", label, want, toml)
+					}
+				}
+				for _, bad := range tc.notWant {
+					if strings.Contains(toml, bad) {
+						t.Errorf("%s: did not want %q in:\n%s", label, bad, toml)
+					}
+				}
+			}
+		}
+	}
+}

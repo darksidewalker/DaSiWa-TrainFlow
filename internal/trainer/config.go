@@ -150,9 +150,7 @@ func writeAnimaTrainingTOML(content *strings.Builder, projectName string, s Sett
 	content.WriteString(fmt.Sprintf("pretrained_model_name_or_path = %s\n", tomlString(filepath.ToSlash(absPath(s.DiTPath)))))
 	content.WriteString(fmt.Sprintf("qwen3 = %s\n", tomlString(filepath.ToSlash(absPath(s.QwenPath)))))
 	content.WriteString(fmt.Sprintf("vae = %s\n", tomlString(filepath.ToSlash(absPath(s.VAEPath)))))
-	content.WriteString("network_module = \"networks.lora_anima\"\n")
-	content.WriteString(fmt.Sprintf("network_dim = %d\n", s.NetworkRank))
-	content.WriteString(fmt.Sprintf("network_alpha = %d\n", s.NetworkAlpha))
+	writeNetworkModuleTOML(content, s, "networks.lora_anima")
 	content.WriteString(fmt.Sprintf("network_train_unet_only = %t\n", s.TrainUNetOnly))
 	content.WriteString("gradient_checkpointing = true\n")
 	content.WriteString("max_grad_norm = 1.0\n")
@@ -251,9 +249,7 @@ func writeSDXLTrainingTOML(content *strings.Builder, projectName string, s Setti
 	if strings.TrimSpace(s.VAEPath) != "" && process.FileExists(s.VAEPath) {
 		content.WriteString(fmt.Sprintf("vae = %s\n", tomlString(filepath.ToSlash(absPath(s.VAEPath)))))
 	}
-	content.WriteString("network_module = \"networks.lora\"\n")
-	content.WriteString(fmt.Sprintf("network_dim = %d\n", s.NetworkRank))
-	content.WriteString(fmt.Sprintf("network_alpha = %d\n", s.NetworkAlpha))
+	writeNetworkModuleTOML(content, s, "networks.lora")
 	content.WriteString(fmt.Sprintf("network_train_unet_only = %t\n", s.TrainUNetOnly))
 	content.WriteString("gradient_checkpointing = true\n")
 	content.WriteString("max_grad_norm = 1.0\n")
@@ -352,6 +348,46 @@ func countDatasetVideos(datasetPath string) int {
 		}
 	}
 	return count
+}
+
+// LoKr preset used when the factor field is left empty: factor 8 with a rank
+// large enough that every module trains its second factor as a full matrix.
+// In full-matrix mode networks.lokr ignores alpha (scale is fixed at 1), so
+// rank and alpha stop being knobs and nothing is left for the user to tune.
+//
+// Full-matrix mode needs rank >= half the larger factored dimension: 640 for
+// SDXL's widest layer at factor 8. The rank must also stay under fp16's
+// 65504, because networks.lokr saves alpha = rank in full-matrix mode and an
+// fp16 save turns 100000 into Inf in every alpha tensor.
+const (
+	lokrPresetFactor = 8
+	lokrFullRank     = 10000
+)
+
+// writeNetworkModuleTOML writes network_module, network_args, network_dim and
+// network_alpha for the SDXL and Anima paths. LoRA keeps the profile's own
+// module, so an unset network_type writes exactly what it always did. LoKr uses
+// sd-scripts' native networks.lokr, which detects SDXL or Anima from the loaded
+// model and needs no LyCORIS install.
+func writeNetworkModuleTOML(content *strings.Builder, s Settings, loraModule string) {
+	rank, alpha := s.NetworkRank, s.NetworkAlpha
+	if !isLoKr(s) {
+		content.WriteString(fmt.Sprintf("network_module = %s\n", tomlString(loraModule)))
+	} else {
+		content.WriteString("network_module = \"networks.lokr\"\n")
+		factor := s.LoKrFactor
+		if factor == 0 {
+			// Empty field: the preset, not the tiny auto-balanced split.
+			factor, rank, alpha = lokrPresetFactor, lokrFullRank, 1
+		}
+		content.WriteString(fmt.Sprintf("network_args = [%s]\n", tomlString(fmt.Sprintf("factor=%d", factor))))
+	}
+	content.WriteString(fmt.Sprintf("network_dim = %d\n", rank))
+	content.WriteString(fmt.Sprintf("network_alpha = %d\n", alpha))
+}
+
+func isLoKr(s Settings) bool {
+	return strings.EqualFold(strings.TrimSpace(s.NetworkType), "lokr")
 }
 
 func tomlString(value string) string {
